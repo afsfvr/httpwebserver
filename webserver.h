@@ -1,6 +1,7 @@
 #ifndef WEBSERVER_H_
 #define WEBSERVER_H_
 
+#include <sys/resource.h>
 #include <map>
 
 #include "threadpool.h"
@@ -16,6 +17,7 @@ public:
     static void quit(int x);
     static bool run;
 private:
+    struct rlimit limit;
     int listenfd;
     int epollfd;
     int m_pipe[2];

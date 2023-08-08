@@ -14,9 +14,21 @@
 #include "log.h"
 
 bool WebServer::run = true;
-static const int MAX_EVENT = 1000;
+static const int MAX_EVENT = 60000;
 
 WebServer::WebServer() {
+    if (getrlimit(RLIMIT_OFILE, &limit) < 0) {
+        LOG_ERROR("getrlimit:%s", strerror(errno));
+        exit(1);
+    }
+    struct rlimit l;
+    l.rlim_cur = MAX_EVENT + 20;
+    l.rlim_max = limit.rlim_max > (MAX_EVENT + 20) ? limit.rlim_max : (MAX_EVENT + 20);
+    if (setrlimit(RLIMIT_OFILE, &l) < 0) {
+        LOG_ERROR("setrlimit:%s", strerror(errno));
+        exit(1);
+    }
+    LOG_INFO("max file descriptor is %d", l.rlim_cur);
     signal(SIGPIPE, SIG_IGN);
     signal(SIGINT, quit);
     signal(SIGQUIT, quit);
@@ -42,6 +54,7 @@ WebServer::WebServer() {
         LOG_ERROR("bind:%s", strerror(errno));
         exit(1);
     }
+    LOG_INFO("port is %d", Config::getInstance()->getPort());
 
     if (listen(listenfd, 32) < 0) {
         close(listenfd);
@@ -81,6 +94,7 @@ WebServer::~WebServer() {
     close(m_pipe[0]);
     close(m_pipe[1]);
     close(epollfd);
+    setrlimit(RLIMIT_OFILE, &limit);
 }
 
 void WebServer::eventLoop() {
@@ -88,7 +102,7 @@ void WebServer::eventLoop() {
     while (run) {
         int count = epoll_wait(epollfd, events, MAX_EVENT, -1);
         if (count < 0) {
-            LOG_ERROR("epoll_wait:%s", strerror(errno));
+            LOG_WARN("epoll_wait:%s", strerror(errno));
             continue;
         }
         for (int i = 0; i < count; i++) {
@@ -143,7 +157,7 @@ void WebServer::add_connect() {
     }
     if (map.size() + 2 >= MAX_EVENT) {
         close(sd);
-        LOG_WARN("达到设置上限,关闭文件描述符%d", sd);
+        LOG_WARN("达到epoll上限,关闭文件描述符%d", sd);
         return;
     }
     LOG_INFO("收到新连接,sd = %d", sd);

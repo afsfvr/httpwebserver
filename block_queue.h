@@ -86,7 +86,7 @@ T BlockQueue<T>::pop() {
     }
     if (del) {
         pthread_mutex_unlock(&mut);
-        while (true) sleep(100);
+        pthread_exit(nullptr);
     }
     Data *d = head;
     head = head->next;
