@@ -1,5 +1,4 @@
 #include <fcntl.h>
-#include <iostream>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/epoll.h>
@@ -22,7 +21,7 @@ WebServer::WebServer(): m_run(true) {
     }
     struct rlimit l;
     l.rlim_cur = std::max((unsigned int)m_limit.rlim_cur, MAX_EVENT);
-    l.rlim_max = std::max((unsigned int)m_limit.rlim_cur, MAX_EVENT);
+    l.rlim_max = std::max((unsigned int)m_limit.rlim_max, MAX_EVENT);
     if (setrlimit(RLIMIT_OFILE, &l) < 0) {
         LOG_ERROR("setrlimit:%s", strerror(errno));
         exit(1);
