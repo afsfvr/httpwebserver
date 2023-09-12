@@ -2,7 +2,6 @@
 #define BLOCK_QUEUE_
 
 #include <pthread.h>
-#include <cstring>
 #include <unistd.h>
 
 template<class T>
@@ -12,12 +11,12 @@ public:
     ~BlockQueue();
     bool push(const T &data);
     T pop();
-    void clear() {
+    void exit() {
         if (head != nullptr) {
             delete head;
             head = nullptr;
         }
-        del = true;
+        m_exit = true;
         pthread_cond_broadcast(&cond);
         usleep(1000 * 100);
     }
@@ -39,7 +38,7 @@ private:
     Data *tail;
     pthread_mutex_t mut;
     pthread_cond_t cond;
-    bool del;
+    bool m_exit;
 };
 
 template<typename T>
@@ -48,12 +47,12 @@ BlockQueue<T>::BlockQueue() {
     pthread_cond_init(&cond, nullptr);
     head = nullptr;
     tail = nullptr;
-    del = false;
+    m_exit = false;
 }
 
 template<typename T>
 BlockQueue<T>::~BlockQueue() {
-    del = true;
+    m_exit = true;
     pthread_mutex_destroy(&mut);
     pthread_cond_destroy(&cond);
     if (head != nullptr) {
@@ -63,7 +62,7 @@ BlockQueue<T>::~BlockQueue() {
 
 template<typename T>
 bool BlockQueue<T>::push(const T &data) {
-    if (del) return false;
+    if (m_exit) return false;
     Data *d = new Data(data);
     pthread_mutex_lock(&mut);
     if (head == nullptr) {
@@ -81,10 +80,10 @@ bool BlockQueue<T>::push(const T &data) {
 template<typename T>
 T BlockQueue<T>::pop() {
     pthread_mutex_lock(&mut);
-    while (this->head == nullptr && ! del) {
+    while (this->head == nullptr && ! m_exit) {
         pthread_cond_wait(&cond, &mut);
     }
-    if (del) {
+    if (m_exit) {
         pthread_mutex_unlock(&mut);
         pthread_exit(nullptr);
     }

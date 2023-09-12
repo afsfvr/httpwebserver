@@ -140,9 +140,7 @@ void HttpConnect::parse() {
         m_buf[i] = str[i];
     }
     m_read_byte = i;
-    for (; i < MAX_BUFSIZE; i++) {
-        m_buf[i] = '\0';
-    }
+    memset(m_buf + i, 0, MAX_BUFSIZE - i);
     modfd(EPOLLIN);
 }
 
@@ -182,9 +180,10 @@ void HttpConnect::parse_line(char *data) {
         parse_param(data);
     }
     m_url = url;
-    if (m_url == "/") {
-        m_url.append(Config::getInstance()->getMainFile());
+    for (auto it = m_url.cbegin(); it != m_url.cend(); it++) {
+        if (*it != '/') return;
     }
+    m_url.append(Config::getInstance()->getMainFile());
 }
 
 void HttpConnect::parse_param(char *data) {

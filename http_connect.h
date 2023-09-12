@@ -1,5 +1,5 @@
-#ifndef REQUEST_H_
-#define REQUEST_H_
+#ifndef HTTP_CONNECT_
+#define HTTP_CONNECT_
 
 #include <string>
 #include <map>

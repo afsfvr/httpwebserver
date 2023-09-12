@@ -30,7 +30,7 @@ ThreadPool<T>::ThreadPool() {
 
 template<typename T>
 ThreadPool<T>::~ThreadPool() {
-    queue.clear();
+    queue.exit();
     for (int i = 0; i < threadNum; i++) {
         pthread_cancel(pids[i]);
     }

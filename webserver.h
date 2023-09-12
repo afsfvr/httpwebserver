@@ -14,15 +14,15 @@ public:
     void eventLoop();
     int setnonblock(int fd);
     void add_connect();
-    static void quit(int x);
-    static bool run;
+    void stop();
 private:
-    struct rlimit limit;
-    int listenfd;
-    int epollfd;
+    struct rlimit m_limit;
+    int m_listenfd;
+    int m_epollfd;
     int m_pipe[2];
-    ThreadPool<HttpConnect> pool;
-    std::map<int, HttpConnect*> map;
+    ThreadPool<HttpConnect> m_pool;
+    std::map<int, HttpConnect*> m_map;
+    bool m_run;
 };
 
 #endif
