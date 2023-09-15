@@ -1,15 +1,11 @@
-#include <iostream>
+#include <locale>
 #include <csignal>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <memory>
 
 #include "webserver.h"
 #include "config.h"
 #include "log.h"
 
-std::unique_ptr<WebServer> p(nullptr);
+WebServer *webserver;
 std::string encoding;
 void quit(int x);
 
@@ -22,9 +18,10 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, quit);
     signal(SIGQUIT, quit);
     signal(SIGTERM, quit);
-    p.reset(new WebServer());
-    p->eventLoop();
+    webserver = new WebServer;
+    webserver->eventLoop();
 
+    delete webserver;
     return 0;
 }
 
@@ -43,5 +40,5 @@ void quit(int x) {
         LOG_WARN("收到信号%d,退出程序", x);
         break;
     }
-    p->stop();
+    webserver->stop();
 }

@@ -1,5 +1,5 @@
-#ifndef SERVLET_H_
-#define SERVLET_H_
+#ifndef BASE_CLASS_H_
+#define BASE_CLASS_H_
 
 #include "request.h"
 #include "response.h"

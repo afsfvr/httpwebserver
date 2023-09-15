@@ -269,7 +269,6 @@ void HttpConnect::run() {
             }
         }
     } catch (int i) {
-        LOG_WARN("收到异常%d",i);
         m_state = STATE::CLOSE;
         write(m_pipe, &m_sd, 4);
     }

@@ -1,5 +1,4 @@
 #include <fcntl.h>
-#include <iostream>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/epoll.h>
@@ -13,7 +12,7 @@
 #include "webserver.h"
 #include "log.h"
 
-static const int MAX_EVENT = 60000;
+static const unsigned int MAX_EVENT = 60000;
 
 WebServer::WebServer(): m_run(true) {
     if (getrlimit(RLIMIT_OFILE, &m_limit) < 0) {
@@ -21,13 +20,13 @@ WebServer::WebServer(): m_run(true) {
         exit(1);
     }
     struct rlimit l;
-    l.rlim_cur = MAX_EVENT + 20;
-    l.rlim_max = m_limit.rlim_max > (MAX_EVENT + 20) ? m_limit.rlim_max : (MAX_EVENT + 20);
+    l.rlim_cur = std::max((unsigned int)m_limit.rlim_cur, MAX_EVENT);
+    l.rlim_max = std::max((unsigned int)m_limit.rlim_max, MAX_EVENT);
     if (setrlimit(RLIMIT_OFILE, &l) < 0) {
         LOG_ERROR("setrlimit:%s", strerror(errno));
         exit(1);
     }
-    LOG_INFO("最多可存在%d个文件描述符", l.rlim_cur);
+    LOG_INFO("最多可存在%u个文件描述符", l.rlim_cur);
     if ((m_listenfd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
         LOG_ERROR("socket:%s", strerror(errno));
         exit(1);
