@@ -10,6 +10,8 @@ template<class T>
 class ThreadPool {
 public:
     ThreadPool();
+    ThreadPool(const ThreadPool&) = delete;
+    ThreadPool& operator=(const ThreadPool&) = delete;
     ~ThreadPool();
     void addjob(T* work);
     static void* run(void *p);

@@ -8,6 +8,8 @@
 class Log{
     public:
         static Log* getInstance();
+        Log(const Log&) = delete;
+        Log& operator=(const Log&) = delete;
         void write_log(int level, const char *filename, int line, const char *format, ...);
         void flush();
         ~Log();

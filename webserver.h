@@ -10,6 +10,8 @@
 class WebServer {
 public:
     WebServer();
+    WebServer(const WebServer&) = delete;
+    WebServer& operator=(const WebServer&) = delete;
     ~WebServer();
     void eventLoop();
     int setnonblock(int fd);

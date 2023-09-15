@@ -9,6 +9,8 @@ template<class T>
 class BlockQueue {
 public:
     BlockQueue();
+    BlockQueue(const BlockQueue&) = delete;
+    BlockQueue& operator=(const BlockQueue&) = delete;
     ~BlockQueue();
     bool push(const T &data);
     T pop();

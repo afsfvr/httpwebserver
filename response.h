@@ -16,6 +16,8 @@ struct case_insensitive_compare {
 class Response{
 public:
     Response(bool &w, bool &chunk, int &status, int &size, int sd, std::map<std::string, std::string, case_insensitive_compare> &headers);
+    Response(const Response&) = delete;
+    Response& operator=(const Response&) = delete;
     void addHeader(const std::string &key, const std::string &value);
     std::string* getHeader(const std::string &key);
     std::map<std::string, std::string, case_insensitive_compare>& getHeaders();
