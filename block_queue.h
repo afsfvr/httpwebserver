@@ -1,5 +1,5 @@
-#ifndef BLOCK_QUEUE_
-#define BLOCK_QUEUE_
+#ifndef BLOCK_QUEUE_H_
+#define BLOCK_QUEUE_H_
 
 #include <pthread.h>
 #include <unistd.h>
@@ -8,6 +8,8 @@ template<class T>
 class BlockQueue {
 public:
     BlockQueue();
+    BlockQueue(const BlockQueue&) = delete;
+    BlockQueue& operator=(const BlockQueue&) = delete;
     ~BlockQueue();
     bool push(const T &data);
     T pop();

@@ -11,6 +11,8 @@ enum class STATE;
 class HttpConnect {
 public:
     HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port);
+    HttpConnect(const HttpConnect&) = delete;
+    HttpConnect& operator=(const HttpConnect&) = delete;
     ~HttpConnect();
     void run();
 private:
