@@ -82,8 +82,8 @@ WebServer::~WebServer() {
     for (auto iter = m_map.begin(); iter != m_map.end(); ++iter) {
         delete iter->second;
     }
-    epoll_ctl(m_listenfd, EPOLL_CTL_DEL, m_listenfd, nullptr);
-    epoll_ctl(m_listenfd, EPOLL_CTL_DEL, m_pipe[0], nullptr);
+    epoll_ctl(m_epollfd, EPOLL_CTL_DEL, m_listenfd, nullptr);
+    epoll_ctl(m_epollfd, EPOLL_CTL_DEL, m_pipe[0], nullptr);
     close(m_listenfd);
     close(m_pipe[0]);
     close(m_pipe[1]);
