@@ -1,4 +1,3 @@
-#include <iostream>
 #include <time.h>
 #include <cstdarg>
 
@@ -53,8 +52,9 @@ void Log::write_log(int level, const char *filename, int line, const char *forma
     }
     va_list ap;
     va_start(ap, format);
-    int m = vsnprintf(buf + n, BUFSIZE - 2 - n, format, ap) + n;
+    int m = vsnprintf(buf + n, BUFSIZE - 1 - n, format, ap) + n;
     va_end(ap);
+    if (m >= BUFSIZE - 1) m = BUFSIZE - 2;
     int count = 0;
     for (int i = n; i < m && (count + m < BUFSIZE - 2); ++i) {
         if (buf[i] == '\r' || buf[i] == '\n' || buf[i] == '\t' || buf[i] == '\f' || buf[i] == '\v') {
