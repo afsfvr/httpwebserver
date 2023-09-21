@@ -15,7 +15,7 @@ struct case_insensitive_compare {
 
 class Request {
 public:
-    Request(int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params);
+    Request(int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params);
     Request(const Request&) = delete;
     Request& operator=(const Request&) = delete;
     const int& getPort() const;
@@ -26,7 +26,12 @@ public:
     const std::map<std::string, std::string>& getParams() const;
     const std::string* getHeader(std::string &key) const;
     const std::string* getParam(std::string &key) const;
+    size_t read_body(char *dest, size_t len);
 private:
+    int m_fd;
+    int &m_read_byte;
+    char *m_buf;
+    size_t &m_body_length;
     int &m_port;
     std::string &m_method;
     std::string &m_url;
