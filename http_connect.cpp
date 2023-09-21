@@ -77,6 +77,20 @@ int HttpConnect::setnonblock(const int &fd) {
 }
 
 void HttpConnect::read_data() {
+    if (m_read_byte == MAX_BUFSIZE) {
+        auto iter = headers.find("connection");
+        if (iter != headers.end()) headers.erase(iter);
+        if (m_url.empty()) {
+            setResponseState(414, "<h1>414</h1>");
+            LOG_WARN("请求URI过大，超过缓冲区大小:%s", m_buf);
+        } else {
+            setResponseState(431, "<h1>431</h1>");
+            LOG_WARN("单行请求头过大，超过缓冲区大小:%s", m_buf);
+        }
+        m_state = STATE::WRITE;
+        modfd(EPOLLOUT);
+        return;
+    }
     while (m_read_byte < MAX_BUFSIZE) {
         int len = recv(m_sd, m_buf + m_read_byte, MAX_BUFSIZE - m_read_byte, 0);
         if (len == 0) throw 1;
@@ -120,28 +134,32 @@ void HttpConnect::write_data() {
 void HttpConnect::parse() {
     char *str = m_buf;
     char *s = strstr(str, "\r\n");
-    while (s != nullptr) {
+    while (s != nullptr && m_read_byte > 0) {
         *s++ = '\0';
         *s++ = '\0';
+        size_t len = strlen(str) + 2;
+        m_read_byte -= len;
         if (m_url.empty()) {
             parse_line(str);
         } else {
             parse_head(str);
         }
         if (m_state == STATE::WRITE) {
-            modfd(EPOLLOUT);
-            return;
+            str = s;
+            break;
         }
         str = s;
         s = strstr(str, "\r\n");
     }
-    int i;
-    for (i = 0; str[i] != '\0'; i++) {
+    for (int i = 0; i < m_read_byte; i++) {
         m_buf[i] = str[i];
     }
-    m_read_byte = i;
-    memset(m_buf + i, 0, MAX_BUFSIZE - i);
-    modfd(EPOLLIN);
+    memset(m_buf + m_read_byte, 0, MAX_BUFSIZE - m_read_byte);
+    if (m_state == STATE::WRITE) {
+        modfd(EPOLLOUT);
+    } else {
+        modfd(EPOLLIN);
+    }
 }
 
 void HttpConnect::parse_line(char *data) {
@@ -161,7 +179,7 @@ void HttpConnect::parse_line(char *data) {
     m_method = data;
     if (m_method != "GET") {
         m_state = STATE::WRITE;
-        setResponseState(400, "<h1>400</h1>");
+        setResponseState(501, "<h1>501</h1>");
         LOG_WARN("不支持的方法:%s",data);
         return;
     }

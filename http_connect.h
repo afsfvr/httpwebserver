@@ -4,8 +4,6 @@
 #include <string>
 #include <map>
 
-const int MAX_BUFSIZE = 4096;
-
 enum class STATE;
 
 class HttpConnect {
@@ -28,6 +26,7 @@ private:
     void modfd(int ev);
     void setResponseState(int s, const char *err);
     void setResponseState();
+    const static int MAX_BUFSIZE = 4096;
     int epollfd;
     int m_pipe;
     int m_sd;
