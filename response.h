@@ -21,17 +21,19 @@ public:
     void addHeader(const std::string &key, const std::string &value);
     std::string* getHeader(const std::string &key);
     std::map<std::string, std::string, case_insensitive_compare>& getHeaders();
-    std::string decimalToHex(int num);
     void write_data(const void *buf, const size_t size);
+    void write_data(const std::string &str);
     void write_data(const void *buf, const size_t size, int flags);
     void write_len(const void *buf,size_t size, int flags);
     void flush();
     void setStatus(int status);
 private:
+    constexpr static int MAX_BUFSIZE = 2048;
+    std::string decimalToHex(int num);
     bool &m_write;
     bool &m_chunk;
     int &m_status;
-    char m_buf[2048];
+    char m_buf[MAX_BUFSIZE];
     int &m_size;
     int m_sd;
     std::map<std::string, std::string, case_insensitive_compare> &m_headers;

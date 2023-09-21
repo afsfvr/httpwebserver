@@ -7,8 +7,6 @@
 #include "request.h"
 #include "response.h"
 
-const int MAX_BUFSIZE = 4096;
-
 enum class STATE;
 
 class HttpConnect {
@@ -33,6 +31,7 @@ private:
     void setResponseState(int s, const char *err);
     void setResponseState(std::string &filename, struct stat &st);
     bool exec_so();
+    const static int MAX_BUFSIZE = 4096;
     bool res_write;
     bool res_chunk;
     int res_state;
@@ -43,6 +42,7 @@ private:
     int m_sd;
     char m_buf[MAX_BUFSIZE];
     int m_read_byte;
+    size_t m_body_len;
     char *m_file_data;
     int m_send_byte;
     int m_have_byte;

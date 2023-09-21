@@ -31,7 +31,7 @@ enum class STATE{
  * 103 send err
  */
 
-HttpConnect::HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port): epollfd(epollfd), m_pipe(pipe), m_sd(sd), m_ip(ip), m_port(port), request(m_port, m_method, m_url, m_ip, headers, params), response(res_write, res_chunk, res_state, res_size, sd, res_headers) {
+HttpConnect::HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port): epollfd(epollfd), m_pipe(pipe), m_sd(sd), m_ip(ip), m_port(port), request(m_sd, m_read_byte, m_buf, m_body_len, m_port, m_method, m_url, m_ip, headers, params), response(res_write, res_chunk, res_state, res_size, sd, res_headers) {
     setnonblock(m_sd);
     m_file_data = nullptr;
     struct epoll_event ev;
@@ -94,6 +94,21 @@ int HttpConnect::setnonblock(const int &fd) {
 }
 
 void HttpConnect::read_data() {
+    if (m_read_byte == MAX_BUFSIZE) {
+        m_buf[m_read_byte - 1] = '\0';
+        auto iter = headers.find("connection");
+        if (iter != headers.end()) headers.erase(iter);
+        if (m_url.empty()) {
+            setResponseState(414, "<h1>414</h1>");
+            LOG_WARN("请求URI过大，超过缓冲区大小:%s", m_buf);
+        } else {
+            setResponseState(431, "<h1>431</h1>");
+            LOG_WARN("单行请求头过大，超过缓冲区大小:%s", m_buf);
+        }
+        m_state = STATE::WRITE;
+        modfd(EPOLLOUT);
+        return;
+    }
     while (m_read_byte < MAX_BUFSIZE) {
         int len = recv(m_sd, m_buf + m_read_byte, MAX_BUFSIZE - m_read_byte, 0);
         if (len == 0) throw 1;
@@ -147,28 +162,32 @@ bool HttpConnect::write_data() {
 void HttpConnect::parse() {
     char *str = m_buf;
     char *s = strstr(str, "\r\n");
-    while (s != nullptr) {
+    while (s != nullptr && m_read_byte > 0) {
         *s++ = '\0';
         *s++ = '\0';
+        size_t len = strlen(str) + 2;
+        m_read_byte -= len;
         if (m_url.empty()) {
             parse_line(str);
         } else {
             parse_head(str);
         }
         if (m_state == STATE::WRITE) {
-            modfd(EPOLLOUT);
-            return;
+            str = s;
+            break;
         }
         str = s;
         s = strstr(str, "\r\n");
     }
-    int i;
-    for (i = 0; str[i] != '\0'; i++) {
+    for (int i = 0; i < m_read_byte; i++) {
         m_buf[i] = str[i];
     }
-    m_read_byte = i;
-    memset(m_buf + i, 0, MAX_BUFSIZE - i);
-    modfd(EPOLLIN);
+    memset(m_buf + m_read_byte, 0, MAX_BUFSIZE - m_read_byte);
+    if (m_state == STATE::WRITE) {
+        modfd(EPOLLOUT);
+    } else {
+        modfd(EPOLLIN);
+    }
 }
 
 void HttpConnect::parse_line(char *data) {
@@ -188,7 +207,7 @@ void HttpConnect::parse_line(char *data) {
     m_method = data;
     if (m_method != "GET" && m_method != "POST") {
         m_state = STATE::WRITE;
-        setResponseState(405, "<h1>405</h1>");
+        setResponseState(501, "<h1>501</h1>");
         LOG_WARN("不支持的方法:%s",data);
         return;
     }
@@ -412,6 +431,9 @@ bool HttpConnect::exec_so() {
                 auto iter = headers.find("connection");
                 if (iter != headers.end() && (iter->second[0] == 'K' || iter->second[0] == 'k')) res_headers.emplace("Connection", "keep-alive");
                 res_headers.emplace("content-type", std::string("text/html;charset=").append(encoding));
+                iter = headers.find("content-length");
+                if (iter != headers.end()) m_body_len = std::stoull(iter->second);
+                else m_body_len = 0;
                 try {
                     if (this->m_method == "POST") {
                         c->post(&request, &response, so_path);

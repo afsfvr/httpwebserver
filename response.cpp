@@ -51,7 +51,7 @@ std::string Response::decimalToHex(int num) {
 
 void Response::write_data(const void *buf, const size_t size) {
     if (size <= 0) return;
-    if (size + m_size > 2048) {
+    if (size + m_size > MAX_BUFSIZE) {
         flush();
         if (m_chunk) {
             std::string s = decimalToHex(size).append("\r\n");
@@ -64,6 +64,23 @@ void Response::write_data(const void *buf, const size_t size) {
         m_size += size;
     }
 }
+
+void Response::write_data(const std::string &str) {
+    size_t size = str.size();
+    if (size + m_size > MAX_BUFSIZE) {
+        flush();
+        if (m_chunk) {
+            std::string s = decimalToHex(size).append("\r\n");
+            write_len(s.data(), s.size(), 0);
+        }
+        write_len(str.data(), size, 0);
+        if (m_chunk) write_len("\r\n", 2, 0);
+    } else {
+        memcpy(m_buf + m_size, str.data(), size);
+        m_size += size;
+    }
+}
+
 void Response::write_data(const void *buf, const size_t size, int flags) {
     if (size <= 0) return;
     flush();
