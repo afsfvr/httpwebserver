@@ -1,5 +1,9 @@
 #include <map>
 #include <cstring>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/sendfile.h>
 #include <sys/socket.h>
 
 #include "response.h"
@@ -101,6 +105,17 @@ void Response::write_len(const void *buf, size_t size, int flags) {
     }
 }
 
+void Response::write_file(const std::string &filename) {
+    struct stat st;
+    if (stat(filename.c_str(), &st) == 0) {
+        int fd = open(filename.c_str(), O_RDONLY);
+        if (fd != -1) {
+            flush();
+            sendfile(m_sd, fd, 0, st.st_size);
+            close(fd);
+        }
+    }
+}
 void Response::flush() {
     if (! m_write) {
         m_chunk = false;

@@ -24,6 +24,7 @@ public:
     void write_data(const void *buf, const size_t size);
     void write_data(const std::string &str);
     void write_data(const void *buf, const size_t size, int flags);
+    void write_file(const std::string &filename);
     void write_len(const void *buf,size_t size, int flags);
     void flush();
     void setStatus(int status);
