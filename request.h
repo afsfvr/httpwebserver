@@ -24,8 +24,8 @@ public:
     const std::string& getIp() const;
     const std::map<std::string, std::string, case_insensitive_compare>& getHeaders() const;
     const std::map<std::string, std::string>& getParams() const;
-    const std::string* getHeader(std::string &key) const;
-    const std::string* getParam(std::string &key) const;
+    const std::string* getHeader(const std::string &key) const;
+    const std::string* getParam(const std::string &key) const;
     size_t read_body(char *dest, size_t len);
 private:
     int m_fd;

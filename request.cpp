@@ -29,7 +29,7 @@ const std::map<std::string, std::string>& Request::getParams() const {
     return m_params;
 }
 
-const std::string* Request::getHeader(std::string &key) const {
+const std::string* Request::getHeader(const std::string &key) const {
     auto it = m_headers.find(key);
     if (it == m_headers.end()) {
         return nullptr;
@@ -38,7 +38,7 @@ const std::string* Request::getHeader(std::string &key) const {
     }
 }
 
-const std::string* Request::getParam(std::string &key) const {
+const std::string* Request::getParam(const std::string &key) const {
     auto it = m_params.find(key);
     if (it == m_params.end()) {
         return nullptr;

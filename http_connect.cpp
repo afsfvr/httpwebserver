@@ -387,6 +387,9 @@ void HttpConnect::setResponseState(int s, const char *str) {
     response_state = s;
     m_send_head = "HTTP/1.1 ";
     m_send_head.append(std::to_string(s)).append("\r\nConnection: ").append(m_keep_alive?"keep-alive\r\n":"close\r\n");
+    for (auto it = res_headers.cbegin(); it != res_headers.cend(); it++) {
+        m_send_head.append(it->first).append(":").append(it->second).append("\r\n");
+    }
     LOG_INFO("socket:%d response:%s", m_sd, m_send_head.c_str());
     if (str != nullptr) {
         m_send_head.append("Content-Length: ").append(std::to_string(strlen(str))).append("\r\n\r\n").append(str).append("\r\n\r\n");
