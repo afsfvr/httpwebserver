@@ -4,8 +4,10 @@
 #include "webserver.h"
 #include "config.h"
 #include "log.h"
+#include "redis_pool.h"
 
 WebServer *webserver;
+RedisPool *pool;
 std::string encoding;
 void quit(int x);
 
@@ -13,7 +15,9 @@ int main(int argc, char *argv[]) {
     encoding = std::locale("").name();
     size_t i = encoding.find('.');
     if (i != std::string::npos) encoding = encoding.substr(i + 1);
-    Config::getInstance()->parse(argc, argv);;
+    Config *config = Config::getInstance();
+    config->parse(argc, argv);;
+    pool = new RedisPool(config->getRedisMinIdle(), config->getRedisMaxIdle(), config->getRedisMaxCount(), config->getRedisIp().c_str(), config->getRedisPort());
     signal(SIGPIPE, SIG_IGN);
     signal(SIGINT, quit);
     signal(SIGQUIT, quit);
@@ -22,6 +26,7 @@ int main(int argc, char *argv[]) {
     webserver->eventLoop();
 
     delete webserver;
+    delete pool;
     return 0;
 }
 

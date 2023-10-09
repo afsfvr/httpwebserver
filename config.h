@@ -20,6 +20,13 @@ public:
     const std::map<std::string, std::string>& getType() const;
     bool getAsyncWriteLog() const;
     int getLogLevel() const;
+    const std::string& getRedisIp() const;
+    int getRedisPort() const;
+    const std::string* getRedisName() const;
+    const std::string* getRedisPasswd() const;
+    int getRedisMaxCount() const;
+    int getRedisMinIdle() const;
+    int getRedisMaxIdle() const;
 private:
     Config();
     int port;
@@ -31,6 +38,13 @@ private:
     int log_level;
     int threadNum;
     std::map<std::string, std::string> type;
+    std::string redis_ip;
+    int redis_port;
+    std::string redis_name;
+    std::string redis_passwd;
+    int redis_min_idle;
+    int redis_max_idle;
+    int redis_max_count;
 };
 
 #endif

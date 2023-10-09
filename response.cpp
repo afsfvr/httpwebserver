@@ -1,4 +1,5 @@
 #include <map>
+#include <ctime>
 #include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
@@ -8,13 +9,28 @@
 
 #include "response.h"
 
-Response::Response(bool &w, bool &chunk, int &status, int &size, int sd, std::map<std::string, std::string, case_insensitive_compare> &headers): m_write(w), m_chunk(chunk), m_status(status), m_size(size), m_sd(sd), m_headers(headers) {}
+Response::Response(bool &w, bool &chunk, int &status, int &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers): m_write(w), m_chunk(chunk), m_status(status), m_size(size), m_sd(sd), m_keep_alive(keep_alive), m_headers(headers) {}
+
+void Response::setContentLength(size_t len) {
+    if (m_write) return;
+    m_headers.emplace("Content-Length", std::to_string(len));
+}
+
+void Response::sendError(int num, const std::string &errmsg) {
+    if (m_write) return;
+    m_status = num;
+    size_t size = errmsg.size();
+    m_headers.emplace("Content-Length", std::to_string(size));
+    m_size = 0;
+    flush();
+    write_len(errmsg.data(), size, 0);
+}
 
 void Response::addHeader(const std::string &key, const std::string &value) {
     if (! m_write) m_headers.emplace(key, value);
 }
 
-std::string* Response::getHeader(const std::string &key) {
+std::string* Response::getHeader(const std::string &key) const {
     auto it = m_headers.find(key);
     if (it == m_headers.end()) {
         return nullptr;
@@ -27,7 +43,7 @@ std::map<std::string, std::string, case_insensitive_compare>& Response::getHeade
     return m_headers;
 }
 
-std::string Response::decimalToHex(int num) {
+std::string Response::decimalToHex(int num) const {
     if (num == 0) return "0";
     bool b = false;
     if (num < 0) {
@@ -88,10 +104,14 @@ void Response::write_data(const std::string &str) {
 void Response::write_data(const void *buf, const size_t size, int flags) {
     if (size <= 0) return;
     flush();
+    if (m_chunk) {
+        std::string s = decimalToHex(size).append("\r\n");
+        write_len(s.data(), s.size(), 0);
+    }
     write_len(buf, size, flags);
 }
 
-void Response::write_len(const void *buf, size_t size, int flags) {
+void Response::write_len(const void *buf, size_t size, int flags) const {
     if (size <= 0) return;
     while (size > 0) {
         int len = send(m_sd, buf, size, flags);
@@ -116,6 +136,7 @@ void Response::write_file(const std::string &filename) {
         }
     }
 }
+
 void Response::flush() {
     if (! m_write) {
         m_chunk = false;
@@ -124,8 +145,7 @@ void Response::flush() {
         for (auto it = m_headers.cbegin(); it != m_headers.cend(); it++) {
             buf.append(it->first).append(":").append(it->second).append("\r\n");
         }
-        auto connection = m_headers.find("connection");
-        if (m_headers.find("content-length") == m_headers.end() && connection != m_headers.end() && (connection->second[0] == 'K' || connection->second[0] == 'k')) {
+        if (m_headers.find("content-length") == m_headers.end() && m_keep_alive) {
             buf.append("Transfer-Encoding: chunked\r\n");
             m_chunk = true;
         }
@@ -146,4 +166,14 @@ void Response::flush() {
 
 void Response::setStatus(int status) {
     m_status = status;
+}
+
+int Response::getStatus() const {
+    return m_status;
+}
+
+std::string Response::time_tToHttpDate(time_t timestamp) const {
+    char buf[128] = {'\0'};
+    std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&timestamp));
+    return buf;
 }

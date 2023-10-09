@@ -17,6 +17,9 @@ public:
     ~HttpConnect();
     void run();
 private:
+    unsigned char toHex(unsigned char x) const;
+    std::string urlDecode(const std::string& str) const;
+    void setCookie();
     void init();
     int setblock(const int &fd);
     int setnonblock(const int &fd);
@@ -24,14 +27,15 @@ private:
     bool write_data();
     void parse();
     void parse_line(char *data);
-    void parse_head(char *data);
     void parse_param(char *data);
+    void parse_head(char *data);
     bool write_head();
     void modfd(int ev);
-    void setResponseState(int s, const char *err);
     void setResponseState(std::string &filename, struct stat &st);
+    void setResponseState(int s, const char *err);
     bool exec_so();
     const static int MAX_BUFSIZE = 4096;
+    uint64_t res_session_id;
     bool res_write;
     bool res_chunk;
     int res_state;

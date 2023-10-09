@@ -18,13 +18,23 @@ Root::Root() {
 }
 
 void Root::get(Request *request, Response *response, const std::string &cur_path) {
-    std::string s = "调用动态链接库的get方法";
-    response->write_data(s.c_str(), s.size());
+    Session session = request->getSession();
+    auto m = session.getAttributes();
+    std::string s = "当前有" + std::to_string(m.size()) + "个属性";
+    for (auto it = m.cbegin(); it != m.cend(); it++) {
+        s.append("\n").append(it->first).append(": ").append(it->second);
+    }
+    response->write_data(s);
 }
 
 void Root::post(Request *request, Response *response, const std::string &cur_path) {
-    std::string s = "调用动态链接库的post方法";
-    response->write_data(s.c_str(), s.size());
+    auto m = request->getParams();
+    Session session = request->getSession();
+    for (auto it = m.cbegin(); it != m.cend(); it++) {
+        session.setAttribute(it->first, it->second);
+    }
+    std::string s = "添加了" + std::to_string(m.size()) + "个属性";
+    response->write_data(s);
 }
 
 Root::~Root() {

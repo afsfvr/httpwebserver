@@ -48,7 +48,8 @@ WebServer::WebServer(): m_run(true) {
         LOG_ERROR("bind:%s", strerror(errno));
         exit(1);
     }
-    LOG_INFO("监听端口为：%d", Config::getInstance()->getPort());
+    getsockname(m_listenfd, reinterpret_cast<sockaddr*>(&address), &addr_len);
+    LOG_INFO("监听端口为：%d", ntohs(address.sin_port));
 
     if (listen(m_listenfd, 32) < 0) {
         close(m_listenfd);
@@ -96,7 +97,7 @@ void WebServer::eventLoop() {
     while (m_run) {
         int count = epoll_wait(m_epollfd, events, MAX_EVENT, -1);
         if (count < 0) {
-            LOG_WARN("epoll_wait:%s", strerror(errno));
+            if (errno != EINTR) {LOG_WARN("epoll_wait:%s", strerror(errno));}
             continue;
         }
         for (int i = 0; i < count; i++) {

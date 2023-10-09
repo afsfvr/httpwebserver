@@ -12,8 +12,10 @@
 #include "log.h"
 #include "config.h"
 #include "http_connect.h"
+#include "redis_pool.h"
 
 extern std::string encoding;
+extern RedisPool *pool;
 
 enum class STATE{
     READ = 1,
@@ -31,7 +33,8 @@ enum class STATE{
  * 103 send err
  */
 
-HttpConnect::HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port): epollfd(epollfd), m_pipe(pipe), m_sd(sd), m_ip(ip), m_port(port), request(m_sd, m_read_byte, m_buf, m_body_len, m_port, m_method, m_url, m_ip, headers, params), response(res_write, res_chunk, res_state, res_size, sd, res_headers) {
+HttpConnect::HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port): epollfd(epollfd), m_pipe(pipe), m_sd(sd), m_ip(ip), m_port(port), request(res_session_id, m_sd, m_read_byte, m_buf, m_body_len, m_port, m_method, m_url, m_ip, headers, params), response(res_write, res_chunk, res_state, res_size, sd, m_keep_alive, res_headers) {
+    srand(time(nullptr));
     setnonblock(m_sd);
     m_file_data = nullptr;
     struct epoll_event ev;
@@ -51,6 +54,81 @@ HttpConnect::~HttpConnect() {
         m_file_data = nullptr;
     }
     close(m_sd);
+}
+
+unsigned char HttpConnect::toHex(unsigned char x) const {
+    if (x >= 'A' && x <= 'Z') return x - 'A' + 10;
+    else if (x >= 'a' && x <= 'z') return x - 'a' + 10;
+    else if (x >= '0' && x <= '9') return x - '0';
+    else return 0;
+}
+
+std::string HttpConnect::urlDecode(const std::string& str) const {
+    std::string ret;
+    size_t length = str.length();
+    for (size_t i = 0; i < length; i++) {
+        if (i + 2 < length && str[i] == '%') {
+            ret += (toHex(str[i + 1]) << 4) | toHex(str[i + 2]);
+            i += 2;
+        } else {
+            ret += str[i];
+        }
+    }
+    return ret;
+}
+
+void HttpConnect::setCookie() {
+    res_session_id = 0;
+    RedisConn redis = pool->get();
+    if (! redis) return;
+    auto iter = headers.find("cookie");
+    if (iter == headers.end()) {
+        uint64_t u;
+        while (true) {
+            u = ((static_cast<uint64_t>(time(nullptr)) & 0xffffffff) << 32) | rand();
+            if (redis->saveSession(u)) break;
+            if (! redis->live()) return;
+        }
+        res_session_id = u;
+        res_headers.emplace("set-cookie", "session=" + std::to_string(u) + ";path=/;");
+        LOG_INFO("url:%s添加cookie:%s", m_url.c_str(), res_headers.find("set-cookie")->second.c_str());
+    } else {
+        std::string s = iter->second;
+        size_t index = s.find("session");
+        if (index != std::string::npos) {
+            size_t index1 = s.find(';', index);
+            index = s.find('=', index);
+            if (index != std::string::npos) s = s.substr(index + 1, index1 - index - 1);
+        }
+        if (index == std::string::npos || s.empty()) {
+            LOG_WARN("cookie错误:%s", s.c_str());
+            uint64_t u;
+            while (true) {
+                u = ((static_cast<uint64_t>(time(nullptr)) & 0xffffffff) << 32) | rand();
+                if (redis->saveSession(u)) break;
+                if (! redis->live()) return;
+            }
+            res_session_id = u;
+            res_headers.emplace("set-cookie", "session=" + std::to_string(u) + ";path=/;");
+        } else {
+            try {
+                uint64_t session = std::stoull(s);
+                bool l = redis->updateExpire(session);
+                if (! l) throw std::invalid_argument("更新过期时间失败");
+                res_session_id = session;
+            } catch (std::exception &e) {
+                uint64_t u;
+                while (true) {
+                    u = ((static_cast<uint64_t>(time(nullptr)) & 0xffffffff) << 32) | rand();
+                    if (redis->saveSession(u)) break;
+                    if (! redis->live()) return;
+                }
+                LOG_WARN("cookie %s错误:%s", iter->second.c_str(), e.what());
+                res_session_id = u;
+                res_headers.emplace("set-cookie", "session=" + std::to_string(u) + ";path=/;");
+            }
+        }
+    }
 }
 
 void HttpConnect::init() {
@@ -106,6 +184,7 @@ void HttpConnect::read_data() {
             LOG_WARN("单行请求头过大，超过缓冲区大小:%s", m_buf);
         }
         m_state = STATE::WRITE;
+        setCookie();
         modfd(EPOLLOUT);
         return;
     }
@@ -130,7 +209,7 @@ bool HttpConnect::write_data() {
         filename.append(m_url);
         struct stat st;
         if (stat(filename.c_str(), &st) < 0) {
-            LOG_INFO("文件%s不存在，尝试装载动态链接库", filename.c_str());
+            LOG_DEBUG("文件%s不存在，尝试装载动态链接库", filename.c_str());
             return false;
         } else {
             setResponseState(filename, st);
@@ -173,6 +252,7 @@ void HttpConnect::parse() {
             parse_head(str);
         }
         if (m_state == STATE::WRITE) {
+            setCookie();
             str = s;
             break;
         }
@@ -225,7 +305,7 @@ void HttpConnect::parse_line(char *data) {
         *data++ = '\0';
         parse_param(data);
     }
-    m_url = url;
+    m_url = urlDecode(url);
     for (auto it = m_url.cbegin(); it != m_url.cend(); it++) {
         if (*it != '/') return;
     }
@@ -239,7 +319,7 @@ void HttpConnect::parse_param(char *data) {
         char *value = strchr(data, '=');
         if (value != nullptr) {
             *value++ = '\0';
-            params.insert(std::make_pair(data, value));
+            params.emplace(urlDecode(data), urlDecode(value));
         } else {
             LOG_WARN("请求参数%s未包含=", data);
         }
@@ -248,7 +328,7 @@ void HttpConnect::parse_param(char *data) {
     char *value = strchr(data, '=');
     if (value != nullptr) {
         *value++ = '\0';
-        params.insert(std::make_pair(data, value));
+        params.emplace(urlDecode(data), urlDecode(value));
     } else {
         LOG_WARN("请求参数%s未包含=", data);
     }
@@ -430,9 +510,13 @@ bool HttpConnect::exec_so() {
                 dlclose(handle);
                 return false;
             } else {
+                LOG_DEBUG("动态链接库%s装载成功", so_path.c_str());
                 auto c = (reinterpret_cast<BaseClass*(*)()>(createClassFn))();
                 auto iter = headers.find("connection");
-                if (iter != headers.end() && (iter->second[0] == 'K' || iter->second[0] == 'k')) res_headers.emplace("Connection", "keep-alive");
+                if (iter != headers.end() && (iter->second[0] == 'K' || iter->second[0] == 'k')) {
+                    m_keep_alive = true;
+                    res_headers.emplace("Connection", m_keep_alive?"keep-alive":"close");
+                }
                 res_headers.emplace("content-type", std::string("text/html;charset=").append(encoding));
                 iter = headers.find("content-length");
                 if (iter != headers.end()) m_body_len = std::stoull(iter->second);
@@ -444,8 +528,20 @@ bool HttpConnect::exec_so() {
                         c->get(&request, &response, so_path);
                     }
                     if (! res_write) response.flush();
-                    if (res_chunk) response.write_len("0\r\n\r\n", 5, 0);
-                    response.flush();
+                    if (res_chunk) {
+                        const char *buf = "0\r\n\r\n";
+                        int size = 5;
+                        while (size > 0) {
+                            int len = send(m_sd, buf, size, 0);
+                            if (len > 0) {
+                                size -= len;
+                            } else if (len < 0) {
+                                throw 103;
+                            } else {
+                                throw 3;
+                            }
+                        }
+                    }
                 } catch (int except) {
                     (reinterpret_cast<void(*)(BaseClass*)>(deleteClassFn))(c);
                     dlclose(handle);
