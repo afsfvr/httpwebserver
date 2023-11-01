@@ -7,6 +7,7 @@
 class Session {
     public:
         Session(uint64_t sessionId);
+        operator bool();
         uint64_t getId() const;
         bool addAttribute(const std::string& key, const std::string& value) const;
         bool setAttribute(const std::string& key, const std::string& value) const;

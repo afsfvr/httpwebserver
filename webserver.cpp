@@ -115,7 +115,7 @@ void WebServer::eventLoop() {
                 HttpConnect *conn = iter->second;
                 m_map.erase(iter);
                 delete conn;
-                LOG_INFO("管道删除文件描述符%d", fd);
+                LOG_DEBUG("管道删除文件描述符%d", fd);
             } else {
                 auto iter = m_map.find(fd);
                 if (iter == m_map.end()) {
@@ -123,7 +123,7 @@ void WebServer::eventLoop() {
                     continue;
                 }
                 if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
-                    LOG_INFO("收到事件%d,删除文件描述符%d", events[i].events, fd);
+                    LOG_DEBUG("收到事件%d,删除文件描述符%d", events[i].events, fd);
                     HttpConnect *conn = iter->second;
                     m_map.erase(iter);
                     delete conn;
@@ -155,7 +155,7 @@ void WebServer::add_connect() {
         LOG_WARN("达到epoll上限,关闭文件描述符%d", sd);
         return;
     }
-    LOG_INFO("收到新连接,sd = %d", sd);
+    LOG_DEBUG("收到新连接,sd = %d", sd);
     auto iter = m_map.find(sd);
     if (iter != m_map.end()) {
         LOG_WARN("存在文件描述符%d,删除,关闭本次连接", sd);

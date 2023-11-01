@@ -5,6 +5,10 @@ extern RedisPool *pool;
 
 Session::Session(uint64_t sessionId):m_sessionId(sessionId) {}
 
+Session::operator bool() {
+    return m_sessionId;
+}
+
 uint64_t Session::getId() const {
     return m_sessionId;
 }

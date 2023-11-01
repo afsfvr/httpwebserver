@@ -527,7 +527,10 @@ bool HttpConnect::exec_so() {
                     } else {
                         c->get(&request, &response, so_path);
                     }
-                    if (! res_write) response.flush();
+                    if (! res_write) {
+                        res_headers.emplace("content-length", std::to_string(res_size));
+                        response.flush();
+                    }
                     if (res_chunk) {
                         const char *buf = "0\r\n\r\n";
                         int size = 5;
