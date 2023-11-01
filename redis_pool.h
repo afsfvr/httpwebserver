@@ -1,7 +1,8 @@
 #ifndef REDIS_POOL_H_
 #define REDIS_POOL_H_
 
-#include <pthread.h>
+#include <mutex>
+#include <condition_variable>
 
 #include "redis.h"
 class RedisPool;
@@ -40,8 +41,8 @@ private:
     char *m_password;
     Redis **m_redis;
     bool *m_idle;
-    pthread_mutex_t m_mutex;
-    pthread_cond_t m_cond;
+    std::mutex m_mutex;
+    std::condition_variable cv;
 };
 
 #endif

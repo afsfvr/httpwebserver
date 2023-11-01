@@ -1,3 +1,4 @@
+#include <thread>
 
 #include "log.h"
 #include "redis_pool.h"
@@ -85,6 +86,7 @@ RedisPool::RedisPool(int minIdle, int maxIdle, int maxCount, const char *url, co
             m_redis[i] = nullptr;
             m_idle[i] = false;
             LOG_WARN("redis[%d]创建失败:%s", i, e.c_str());
+            if (i >= 10 && m_use_count == 0) break;
         }
     }
     if (m_idle_count == 0 && m_min_idle > m_idle_count) {
@@ -92,24 +94,30 @@ RedisPool::RedisPool(int minIdle, int maxIdle, int maxCount, const char *url, co
     } else {
         LOG_INFO("成功创建%d个redis连接", m_use_count);
     }
-    pthread_mutex_init(&m_mutex, nullptr);
-    pthread_cond_init(&m_cond, nullptr);
 }
 
 RedisPool::~RedisPool() {
-    m_idle_count = m_max_count;
+    m_mutex.lock();
+    m_idle_count = 0;
     m_use_count = 0;
-    pthread_cond_broadcast(&m_cond);
-    pthread_yield();
-    if (m_username != nullptr) delete[] m_username;
-    if (m_password != nullptr) delete[] m_password;
     for (int i = 0; i < m_max_count; ++i) {
         delete m_redis[i];
+        m_redis[i] = nullptr;
+        m_idle[i] = false;
     }
+    cv.notify_all();
+    m_mutex.unlock();
+    std::this_thread::yield();
+    if (m_url != nullptr) delete[] m_url;
+    if (m_username != nullptr) delete[] m_username;
+    if (m_password != nullptr) delete[] m_password;
     delete[] m_redis;
     delete[] m_idle;
-    pthread_mutex_destroy(&m_mutex);
-    pthread_cond_destroy(&m_cond);
+    m_url = nullptr;
+    m_username = nullptr;
+    m_password = nullptr;
+    m_redis = nullptr;
+    m_idle = nullptr;
 }
 
 int RedisPool::getIdleCount() {
@@ -117,17 +125,14 @@ int RedisPool::getIdleCount() {
 }
 
 RedisConn RedisPool::get() {
-    if (m_idle_count <= 0) {
-        adjustPool();
-    }
+    if (m_redis == nullptr) return {nullptr, nullptr};
+    if (m_idle_count <= 0) adjustPool();
     if (m_use_count == 0) {
         LOG_ERROR("没有可用的redis连接,redis全部连接失败");
         return {nullptr, nullptr};
     }
-    pthread_mutex_lock(&m_mutex);
-    while (m_idle_count <= 0) {
-        pthread_cond_wait(&m_cond, &m_mutex);
-    }
+    std::unique_lock<std::mutex> lock(m_mutex);
+    cv.wait(lock, [&]() {return m_idle_count > 0 || m_use_count == 0;});
     Redis *redis = nullptr;
     for (int i = 0; i < m_max_count; ++i) {
         if (m_idle[i]) {
@@ -147,13 +152,12 @@ RedisConn RedisPool::get() {
             if (redis != nullptr) break;
         }
     }
-    pthread_mutex_unlock(&m_mutex);
     return {this, redis};
 }
 
 void RedisPool::put(Redis *redis) {
-    if (redis == nullptr) return;
-    pthread_mutex_lock(&m_mutex);
+    if (redis == nullptr || m_use_count == 0) return;
+    m_mutex.lock();
     for (int i = 0; i < m_max_count; ++i) {
         if (redis == m_redis[i] && ! m_idle[i]) {
             if (m_idle_count + 1 > m_max_count) {
@@ -162,22 +166,22 @@ void RedisPool::put(Redis *redis) {
                 --m_use_count;
             } else {
                 m_idle[i] = true;
+                if (m_idle_count == 0) cv.notify_one();
                 ++m_idle_count;
-                pthread_cond_signal(&m_cond);
             }
             break;
         }
     }
-    pthread_mutex_unlock(&m_mutex);
+    m_mutex.unlock();
 }
 
 void RedisPool::adjustPool() {
-    if (m_use_count == m_max_count) return;
+    if (m_redis == nullptr) return;
     Redis *redis = nullptr;
-    pthread_mutex_lock(&m_mutex);
+    m_mutex.lock();
     for (int i = 0; m_use_count < m_max_count && m_idle_count <= m_min_idle; ++i) {
         if (redis == nullptr) {
-            pthread_mutex_unlock(&m_mutex);
+            m_mutex.unlock();
             try {
                 redis = new Redis(m_url, m_port, m_username, m_password);
             } catch (const std::string &e) {
@@ -185,7 +189,7 @@ void RedisPool::adjustPool() {
                 LOG_WARN("redis连接失败:%s",e.c_str());
                 return;
             }
-            pthread_mutex_lock(&m_mutex);
+            m_mutex.lock();
         }
         if (m_redis[i] == nullptr) {
             m_redis[i] = redis;
@@ -195,7 +199,7 @@ void RedisPool::adjustPool() {
             ++m_use_count;
         }
     }
-    pthread_mutex_unlock(&m_mutex);
+    m_mutex.unlock();
     if (redis != nullptr) {
         delete redis;
         redis = nullptr;
