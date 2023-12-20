@@ -112,6 +112,7 @@ void Response::write_data(const void *buf, const size_t size, int flags) {
 }
 
 void Response::write_len(const void *buf, size_t size, int flags) const {
+    if (m_sd < 0) return;
     if (size <= 0) return;
     while (size > 0) {
         int len = send(m_sd, buf, size, flags);
@@ -126,13 +127,19 @@ void Response::write_len(const void *buf, size_t size, int flags) const {
 }
 
 void Response::write_file(const std::string &filename) {
+    if (m_sd < 0) return;
     struct stat st;
     if (stat(filename.c_str(), &st) == 0) {
         int fd = open(filename.c_str(), O_RDONLY);
         if (fd != -1) {
             flush();
+            if (m_chunk) {
+                std::string buf = decimalToHex(st.st_size).append("\r\n");
+                write_len(buf.data(), buf.size(), 0);
+            }
             sendfile(m_sd, fd, 0, st.st_size);
             close(fd);
+            if (m_chunk) write_len("\r\n", 2, 0);
         }
     }
 }
