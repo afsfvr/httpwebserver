@@ -15,7 +15,7 @@ struct case_insensitive_compare {
 
 class Response{
 public:
-    Response(bool &w, bool &chunk, int &status, int &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers);
+    Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers);
     Response(const Response&) = delete;
     Response& operator=(const Response&) = delete;
     void setContentLength(size_t len);
@@ -39,7 +39,7 @@ private:
     bool &m_chunk;
     int &m_status;
     char m_buf[MAX_BUFSIZE];
-    int &m_size;
+    size_t &m_size;
     int m_sd;
     bool &m_keep_alive;
     std::map<std::string, std::string, case_insensitive_compare> &m_headers;

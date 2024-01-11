@@ -102,7 +102,6 @@ void WebServer::eventLoop() {
         }
         for (int i = 0; i < count; i++) {
             int fd = events[i].data.fd;
-            LOG_DEBUG("文件描述符%d收到事件%d", fd, events[i].events);
             if (fd == m_listenfd) {
                 add_connect();
             } else if (fd == m_pipe[0]) {

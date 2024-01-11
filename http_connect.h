@@ -39,7 +39,7 @@ private:
     bool res_write;
     bool res_chunk;
     int res_state;
-    int res_size;
+    size_t res_size;
     std::map<std::string, std::string, case_insensitive_compare> res_headers;
     int epollfd;
     int m_pipe;
@@ -47,9 +47,9 @@ private:
     char m_buf[MAX_BUFSIZE];
     int m_read_byte;
     char *m_file_data;
-    int m_send_byte;
-    int m_have_byte;
-    int m_file_length;
+    size_t m_send_byte;
+    size_t m_have_byte;
+    size_t m_file_length;
     size_t m_body_len;
     std::string m_send_head;
     std::string m_dynamic_lib_file;

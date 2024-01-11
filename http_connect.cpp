@@ -301,7 +301,7 @@ void HttpConnect::write_data() {
 
     if (! write_head()) return;
     while (true) {
-        if (m_have_byte <= 0) {
+        if (m_have_byte == 0) {
             init();
             return;
         }
@@ -423,13 +423,13 @@ void HttpConnect::init_write_data(std::string filename, bool load_lib) {
             if (iter != headers.end()) {
                 std::string str = iter->second;
                 size_t index1 = str.find('='), index2 = str.find('-');
-                int i1 = 0, i2 = m_file_length;
+                size_t i1 = 0, i2 = m_file_length;
                 if (index1 != std::string::npos && index2 != std::string::npos) {
                     if (index1 + 1 != index2) {
-                        i1 = atoi(str.substr(index1 + 1, index2).c_str());
+                        i1 = std::stoull(str.substr(index1 + 1, index2).c_str());
                     }
                     if (index2 + 1 != str.size()) {
-                        i2 = atoi(str.substr(index2 + 1).c_str());
+                        i2 = std::stoull(str.substr(index2 + 1).c_str());
                     }
                 }
                 if (i2 >= m_file_length) i2--;

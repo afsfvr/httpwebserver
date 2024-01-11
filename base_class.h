@@ -28,7 +28,8 @@ std::string BaseClass::doGet(Request *request, Response *response, const std::st
 
 void BaseClass::doHead(Request *request, Response *response, const std::string &cur_path) {
     bool res_write = false, res_chunk = false;
-    int res_state = 200, res_size = 0;
+    int res_state = 200;
+    size_t res_size = 0;
     bool keep_alive = true;
     std::map<std::string, std::string, case_insensitive_compare> res_headers(response->getHeaders());
     int fd = open("/dev/null", O_RDWR);

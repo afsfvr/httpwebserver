@@ -9,7 +9,7 @@
 
 #include "response.h"
 
-Response::Response(bool &w, bool &chunk, int &status, int &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers): m_write(w), m_chunk(chunk), m_status(status), m_size(size), m_sd(sd), m_keep_alive(keep_alive), m_headers(headers) {}
+Response::Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers): m_write(w), m_chunk(chunk), m_status(status), m_size(size), m_sd(sd), m_keep_alive(keep_alive), m_headers(headers) {}
 
 void Response::setContentLength(size_t len) {
     if (m_write) return;
