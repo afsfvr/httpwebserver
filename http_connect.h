@@ -15,6 +15,7 @@ public:
     HttpConnect(const HttpConnect&) = delete;
     HttpConnect& operator=(const HttpConnect&) = delete;
     ~HttpConnect();
+    operator int();
     void run();
 private:
     unsigned char toHex(unsigned char x) const;
@@ -35,7 +36,9 @@ private:
     void setResponseState(int s, const char *err);
     bool run_dynamic_lib();
     const static int MAX_BUFSIZE = 4096;
+#ifndef NO_REDIS
     uint64_t res_session_id;
+#endif
     bool res_write;
     bool res_chunk;
     int res_state;

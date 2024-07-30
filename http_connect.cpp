@@ -7,15 +7,19 @@
 #include <unistd.h>
 #include <iostream>
 #include <cstring>
+#include <ctime>
 
 #include "base_class.h"
 #include "log.h"
 #include "config.h"
 #include "http_connect.h"
+
+#ifndef NO_REDIS
 #include "redis_pool.h"
+extern RedisPool *pool;
+#endif
 
 extern std::string encoding;
-extern RedisPool *pool;
 
 enum class STATE{
     READ = 1,
@@ -33,12 +37,16 @@ enum class STATE{
  * 103 send err
  */
 
+#if defined (NO_REDIS)
+HttpConnect::HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port): epollfd(epollfd), m_pipe(pipe), m_sd(sd), m_ip(ip), m_port(port), request(m_sd, m_read_byte, m_buf, m_body_len, m_port, m_method, m_url, m_ip, headers, params), response(res_write, res_chunk, res_state, res_size, sd, m_keep_alive, res_headers) {
+#else
 HttpConnect::HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port): epollfd(epollfd), m_pipe(pipe), m_sd(sd), m_ip(ip), m_port(port), request(res_session_id, m_sd, m_read_byte, m_buf, m_body_len, m_port, m_method, m_url, m_ip, headers, params), response(res_write, res_chunk, res_state, res_size, sd, m_keep_alive, res_headers) {
+#endif
     srand(time(nullptr));
     setnonblock(m_sd);
     m_file_data = nullptr;
     struct epoll_event ev;
-    ev.data.fd = m_sd;
+    ev.data.ptr = this;
     ev.events = EPOLLIN | EPOLLRDHUP | EPOLLET | EPOLLONESHOT;
     epoll_ctl(epollfd, EPOLL_CTL_ADD, m_sd, &ev);
     m_keep_alive = true;
@@ -80,7 +88,7 @@ std::string HttpConnect::urlDecode(const std::string& str) const {
 
 void HttpConnect::modfd(int ev) {
     struct epoll_event event;
-    event.data.fd = m_sd;
+    event.data.ptr = this;
     event.events = ev | EPOLLET | EPOLLRDHUP | EPOLLONESHOT;
     epoll_ctl(epollfd, EPOLL_CTL_MOD, m_sd, &event);
 }
@@ -270,6 +278,10 @@ void HttpConnect::parse_param(char *data) {
     }
 }
 
+HttpConnect::operator int() {
+    return m_sd;
+}
+
 void HttpConnect::run() {
     try {
         if (m_state == STATE::READ) {
@@ -279,7 +291,8 @@ void HttpConnect::run() {
         }
     } catch (int i) {
         m_state = STATE::CLOSE;
-        write(m_pipe, &m_sd, 4);
+        HttpConnect *conn = this;
+        write(m_pipe, &conn, sizeof(HttpConnect*));
     }
 }
 
@@ -455,7 +468,9 @@ void HttpConnect::init_write_data(std::string filename, bool load_lib) {
 }
 
 void HttpConnect::setCookie() {
+#ifndef NO_REDIS
     res_session_id = 0;
+    if (pool == nullptr) return;
     RedisConn redis = pool->get();
     if (! redis) return;
     auto iter = headers.find("cookie");
@@ -506,6 +521,7 @@ void HttpConnect::setCookie() {
             }
         }
     }
+#endif
 }
 
 void HttpConnect::setResponseState(int s, const char *str) {
@@ -569,8 +585,8 @@ bool HttpConnect::run_dynamic_lib() {
                     }
                     if (! res_write) {
                         res_headers.emplace("Content-Length", std::to_string(res_size));
-                        response.flush();
                     }
+                    response.flush();
                     if (res_chunk) {
                         const char *buf = "0\r\n\r\n";
                         int size = 5;
