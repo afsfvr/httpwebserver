@@ -1,3 +1,5 @@
+#ifndef NO_REDIS
+
 #include <thread>
 
 #include "log.h"
@@ -205,3 +207,5 @@ void RedisPool::adjustPool() {
         redis = nullptr;
     }
 }
+
+#endif

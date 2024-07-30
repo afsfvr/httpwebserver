@@ -1,4 +1,4 @@
-#ifndef REDIS_POOL_H_
+#if ! defined (REDIS_POOL_H_) && ! defined (NO_REDIS)
 #define REDIS_POOL_H_
 
 #include <mutex>

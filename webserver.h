@@ -23,7 +23,6 @@ private:
     int m_epollfd;
     int m_pipe[2];
     ThreadPool<HttpConnect> m_pool;
-    std::map<int, HttpConnect*> m_map;
     bool m_run;
 };
 

@@ -1,3 +1,5 @@
+#ifndef NO_REDIS
+
 #include <cstring>
 
 #include "redis.h"
@@ -160,3 +162,5 @@ bool Redis::rmSession(uint64_t sessionId) {
     freeReplyObject(reply);
     return ret;
 }
+
+#endif

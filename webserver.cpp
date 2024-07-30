@@ -80,11 +80,8 @@ WebServer::WebServer(): m_run(true) {
 }
 
 WebServer::~WebServer() {
-    for (auto iter = m_map.begin(); iter != m_map.end(); ++iter) {
-        delete iter->second;
-    }
-    epoll_ctl(m_listenfd, EPOLL_CTL_DEL, m_listenfd, nullptr);
-    epoll_ctl(m_listenfd, EPOLL_CTL_DEL, m_pipe[0], nullptr);
+    epoll_ctl(m_epollfd, EPOLL_CTL_DEL, m_listenfd, nullptr);
+    epoll_ctl(m_epollfd, EPOLL_CTL_DEL, m_pipe[0], nullptr);
     close(m_listenfd);
     close(m_pipe[0]);
     close(m_pipe[1]);
@@ -105,29 +102,21 @@ void WebServer::eventLoop() {
             if (fd == m_listenfd) {
                 add_connect();
             } else if (fd == m_pipe[0]) {
-                read(m_pipe[0], &fd, 4);
-                auto iter = m_map.find(fd);
-                if (iter == m_map.end()) {
-                    LOG_WARN("未找到文件描述符%d对应的连接", fd);
-                    continue;
+                HttpConnect *conn = nullptr;
+                ssize_t len = read(m_pipe[0], &conn, sizeof(HttpConnect*));
+                if (len == sizeof(HttpConnect*)) {
+                    LOG_DEBUG("管道删除文件描述符%d", (int)*conn);
+                    delete conn;
+                } else {
+                    LOG_WARN("管道读数据时返回%d，应为%d, error:%d", len, sizeof(HttpConnect*), errno);
                 }
-                HttpConnect *conn = iter->second;
-                m_map.erase(iter);
-                delete conn;
-                LOG_DEBUG("管道删除文件描述符%d", fd);
             } else {
-                auto iter = m_map.find(fd);
-                if (iter == m_map.end()) {
-                    LOG_WARN("未找到文件描述符%d对应的连接", fd);
-                    continue;
-                }
+                HttpConnect *conn = reinterpret_cast<HttpConnect*>(events[i].data.ptr);
                 if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
                     LOG_DEBUG("收到事件%d,删除文件描述符%d", events[i].events, fd);
-                    HttpConnect *conn = iter->second;
-                    m_map.erase(iter);
                     delete conn;
                 } else if (events[i].events & (EPOLLIN | EPOLLOUT)) {
-                    m_pool.addjob(iter->second);
+                    m_pool.addjob(conn);
                 }
             }
         }
@@ -149,28 +138,10 @@ void WebServer::add_connect() {
         LOG_ERROR("accept:%s", strerror(errno));
         return;
     }
-    if (m_map.size() + 2 >= MAX_EVENT) {
-        close(sd);
-        LOG_WARN("达到epoll上限,关闭文件描述符%d", sd);
-        return;
-    }
     LOG_DEBUG("收到新连接,sd = %d", sd);
-    auto iter = m_map.find(sd);
-    if (iter != m_map.end()) {
-        LOG_WARN("存在文件描述符%d,删除,关闭本次连接", sd);
-        close(sd);
-        HttpConnect *conn = iter->second;
-        m_map.erase(iter);
-        delete conn;
-        return;
-    }
     char ip[32];
     inet_ntop(AF_INET, &address.sin_addr, ip, 32);
-    HttpConnect *conn = new HttpConnect(m_epollfd, m_pipe[1], sd, ip, ntohs(address.sin_port));
-    if (! m_map.insert(std::make_pair(sd, conn)).second) {
-        LOG_WARN("插入文件描述符%d失败", sd);
-        delete conn;
-    }
+    new HttpConnect(m_epollfd, m_pipe[1], sd, ip, ntohs(address.sin_port));
 }
 
 void WebServer::stop() {

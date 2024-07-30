@@ -1,3 +1,5 @@
+#ifndef NO_LOG
+
 #include <time.h>
 #include <cstdarg>
 
@@ -104,3 +106,5 @@ void Log::async_write_log() {
         fputs(queue->pop().c_str(), m_fp);
     }
 }
+
+#endif

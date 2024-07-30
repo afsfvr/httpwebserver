@@ -1,3 +1,5 @@
+#ifndef NO_REDIS
+
 #include "session.h"
 #include "redis_pool.h"
 
@@ -39,8 +41,7 @@ int Session::getMaxInactiveInterval() const {
 }
 
 bool Session::setMaxInactiveInterval(int interval) const {
-    if (m_sessionId == 0) return false;
-    if (interval < 0) return false;
+    if (interval < 0 || m_sessionId == 0) return false;
     RedisConn redis = pool->get();
     if (! redis) return -1;
     return redis->updateExpire(m_sessionId, interval);
@@ -86,3 +87,5 @@ bool Session::invalidate() {
     if (! redis->rmSession(m_sessionId) && redis->existsSession(m_sessionId)) return false;
     return redis->saveSession(m_sessionId);
 }
+
+#endif

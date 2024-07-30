@@ -1,4 +1,4 @@
-#ifndef REDIS_H_
+#if ! defined (REDIS_H_) && ! defined (NO_REDIS)
 #define REDIS_H_
 
 #include <map>
