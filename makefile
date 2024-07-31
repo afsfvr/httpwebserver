@@ -1,6 +1,6 @@
 CC = g++
 CXX = g++
-LDFLAGS += -Wall -pthread -ldl -rdynamic -lhiredis
+LDFLAGS += -Wall -pthread -ldl -rdynamic
 CXXFLAGS += -Wall -MMD
 BIN = main
 SRC = $(wildcard *.cpp) 
@@ -19,6 +19,8 @@ REDIS ?= 0
 ifeq ($(REDIS), 0)
 	LDFLAGS += -DNO_REDIS
 	CXXFLAGS += -DNO_REDIS
+else
+	LDFLAGS += -lhiredis
 endif
 
 DEBUG ?= 0
