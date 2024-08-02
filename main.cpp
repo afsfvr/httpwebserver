@@ -17,6 +17,7 @@ static struct termios termiosSettings;
 std::string encoding;
 void quit(int x);
 void daemonize(const char *outFile="/dev/null");
+void hookFunction();
 
 int main(int argc, char *argv[]) {
     Config *config = Config::getInstance();
@@ -32,6 +33,7 @@ int main(int argc, char *argv[]) {
     tcgetattr(fileno(stdin), &termiosSettings);
     termiosSettings.c_lflag &= ~ECHO;
     tcsetattr(fileno(stdin), TCSAFLUSH, &termiosSettings);
+    atexit(hookFunction);
 
 #ifndef NO_REDIS
     pool = nullptr;
@@ -44,13 +46,6 @@ int main(int argc, char *argv[]) {
     webserver = new WebServer;
     webserver->eventLoop();
 
-    termiosSettings.c_lflag |= ECHO;
-    tcsetattr(fileno(stdin), TCSANOW, &termiosSettings);
-
-#ifndef NO_REDIS
-    delete pool;
-#endif
-    delete webserver;
     return 0;
 }
 
@@ -100,4 +95,14 @@ void daemonize(const char *outFile) {
     if (out > 2) close(out);
 
     setsid();
+}
+
+void hookFunction() {
+    termiosSettings.c_lflag |= ECHO;
+    tcsetattr(fileno(stdin), TCSANOW, &termiosSettings);
+
+#ifndef NO_REDIS
+    delete pool;
+#endif
+    delete webserver;
 }
