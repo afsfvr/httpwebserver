@@ -1,5 +1,6 @@
 #include <locale>
 #include <csignal>
+#include <termios.h>
 #include <fcntl.h>
 
 #include "webserver.h"
@@ -12,17 +13,26 @@ RedisPool *pool;
 #endif
 
 WebServer *webserver;
+static struct termios termiosSettings;
 std::string encoding;
 void quit(int x);
 void daemonize(const char *outFile="/dev/null");
 
 int main(int argc, char *argv[]) {
-    /* daemonize("./libwebserver.log"); */
+    Config *config = Config::getInstance();
+    config->parse(argc, argv);
+    if (config->getDaemon()) {
+        daemonize(config->getDaemon());
+    }
+
     encoding = std::locale("").name();
     size_t i = encoding.find('.');
     if (i != std::string::npos) encoding = encoding.substr(i + 1);
-    Config *config = Config::getInstance();
-    config->parse(argc, argv);;
+
+    tcgetattr(fileno(stdin), &termiosSettings);
+    termiosSettings.c_lflag &= ~ECHO;
+    tcsetattr(fileno(stdin), TCSAFLUSH, &termiosSettings);
+
 #ifndef NO_REDIS
     pool = nullptr;
     pool = new RedisPool(config->getRedisMinIdle(), config->getRedisMaxIdle(), config->getRedisMaxCount(), config->getRedisIp().c_str(), config->getRedisPort());
@@ -33,6 +43,9 @@ int main(int argc, char *argv[]) {
     signal(SIGTERM, quit);
     webserver = new WebServer;
     webserver->eventLoop();
+
+    termiosSettings.c_lflag |= ECHO;
+    tcsetattr(fileno(stdin), TCSANOW, &termiosSettings);
 
 #ifndef NO_REDIS
     delete pool;
@@ -72,11 +85,11 @@ void daemonize(const char *outFile) {
     int input = open("/dev/null", O_RDWR);
     int out = open(outFile, O_WRONLY | O_CREAT | O_TRUNC , 0664);
     if (input < 0) {
-        perror("open出错");
+        perror("/dev/null open出错");
         exit(1);
     }
     if (out < 0) {
-        perror("open出错");
+        perror(std::string(outFile).append(" open出错").c_str());
         exit(1);
     }
 

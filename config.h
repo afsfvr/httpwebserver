@@ -17,6 +17,7 @@ public:
     const std::string& getWebappsPath() const;
     const std::string& getWebappsSo() const;
     int getThreadNum() const;
+    const char* getDaemon() const;
     const std::map<std::string, std::string>& getType() const;
     bool getAsyncWriteLog() const;
     int getLogLevel() const;
@@ -37,6 +38,7 @@ private:
     bool async_write_log;
     int log_level;
     int threadNum;
+    std::string daemon;
     std::map<std::string, std::string> type;
     std::string redis_ip;
     int redis_port;
