@@ -45,9 +45,27 @@ void Config::parse(int argc, char *argv[]) {
     if (argc == 0 || argv == nullptr) {
         throw std::invalid_argument(std::string("参数非法:nullptr"));
     }
-    struct option argarr[] = {{"port", 1, nullptr, 'p'}, {"rootpath", 1, nullptr, 'r'}, {"file", 1, nullptr, 'f'}, {"thread", 1 , nullptr, 't'}, {"level", 1, nullptr, 'l'}, {"async", 0, nullptr, 'a'}, {"so", 1, nullptr, 's'}, {"webapps", 1, nullptr, 'w'}, {"redisip", 1, nullptr, 'i'}, {"redisport", 1, nullptr, 'P'}, {"username", 1, nullptr, 'u'}, {"secret", 1, nullptr, 'S'}, {"minIdle", 1, nullptr, 'm'}, {"maxIdle", 1, nullptr, 'M'}, {"count", 1, nullptr, 'c'}, {"help", 0, nullptr, 'h'}, {nullptr, 0, nullptr, 0}};
+    struct option argarr[] = {
+        {"port", 1, nullptr, 'p'},
+        {"rootpath", 1, nullptr, 'r'},
+        {"file", 1, nullptr, 'f'},
+        {"thread", 1 , nullptr, 't'},
+        {"daemon", 1, nullptr, 'd'},
+        {"level", 1, nullptr, 'l'},
+        {"async", 0, nullptr, 'a'},
+        {"so", 1, nullptr, 's'},
+        {"webapps", 1, nullptr, 'w'},
+        {"redisip", 1, nullptr, 'i'},
+        {"redisport", 1, nullptr, 'P'},
+        {"username", 1, nullptr, 'u'},
+        {"secret", 1, nullptr, 'S'},
+        {"minIdle", 1, nullptr, 'm'},
+        {"maxIdle", 1, nullptr, 'M'},
+        {"count", 1, nullptr, 'c'},
+        {"help", 0, nullptr, 'h'},
+        {nullptr, 0, nullptr, 0}};
     int index = 0, c = -1;
-    while ((c = getopt_long(argc, argv, "p:r:f:t:l:as:w:i:P:u:S:m:M:c:h", argarr, &index)) >= 0) {
+    while ((c = getopt_long(argc, argv, "p:r:f:t:d:l:as:w:i:P:u:S:m:M:c:h", argarr, &index)) >= 0) {
         switch(c) {
         case 'p':
             this->port = atoi(optarg);
@@ -60,6 +78,9 @@ void Config::parse(int argc, char *argv[]) {
             break;
         case 't':
             this->threadNum = atoi(optarg);
+            break;
+        case 'd':
+            this->daemon = optarg;
             break;
         case 'l':
             this->log_level = atoi(optarg);
@@ -101,6 +122,7 @@ void Config::parse(int argc, char *argv[]) {
             std::cout << "-r\t--rootpath\t静态资源路径" << std::endl;
             std::cout << "-f\t--file\t\t主页，默认index.html" << std::endl;
             std::cout << "-t\t--thread\t线程数量，默认8" << std::endl;
+            std::cout << "-d\t--daemon\t守护进程日志路径" << std::endl;
             std::cout << "-l\t--level\t\t日志级别,1-error,2-warn,3-info,4-debug,其它关闭日志，默认3" << std::endl;
             std::cout << "-a\t--async\t\t开启异步日志，默认同步日志" << std::endl;
             std::cout << "-s\t--so\t\t动态库so文件的名称，默认main.so" << std::endl;
@@ -139,6 +161,13 @@ const std::string& Config::getMainFile() const {
 
 int Config::getThreadNum() const {
     return threadNum;
+}
+
+const char* Config::getDaemon() const {
+    if (daemon.size() > 0) {
+        return daemon.c_str();
+    }
+    return nullptr;
 }
 
 bool Config::getAsyncWriteLog() const {
