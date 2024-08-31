@@ -530,6 +530,10 @@ void HttpConnect::setResponseState(int s, const char *str) {
         m_keep_alive = true;
         res_headers.emplace("Connection", "keep-alive");
     }
+    char buf[128] = {'\0'};
+    time_t timestamp = time(nullptr);
+    std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&timestamp));
+    res_headers.emplace("Date", buf);
     response_state = s;
     m_send_head = "HTTP/1.1 ";
     m_send_head.append(std::to_string(s)).append("\r\n");
