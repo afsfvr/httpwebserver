@@ -14,7 +14,7 @@
 #include "config.h"
 #include "http_connect.h"
 
-#ifndef NO_REDIS
+#ifdef USE_REDIS
 #include "redis_pool.h"
 extern RedisPool *pool;
 #endif
@@ -37,10 +37,10 @@ enum class STATE{
  * 103 send err
  */
 
-#if defined (NO_REDIS)
-HttpConnect::HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port): epollfd(epollfd), m_pipe(pipe), m_sd(sd), m_ip(ip), m_port(port), request(m_sd, m_read_byte, m_buf, m_body_len, m_port, m_method, m_url, m_ip, headers, params), response(res_write, res_chunk, res_state, res_size, sd, m_keep_alive, res_headers) {
+#if defined (USE_REDIS)
+HttpConnect::HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port): epollfd(epollfd), m_pipe(pipe), m_sd(sd), m_ip(ip), m_port(port), request(res_session_id, m_sd, m_read_byte, m_buf, m_body_len, m_port, m_method, m_url, m_ip, headers, params), response(res_write, res_chunk, res_state, res_size, sd, m_keep_alive, res_headers, res_cookies) {
 #else
-HttpConnect::HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port): epollfd(epollfd), m_pipe(pipe), m_sd(sd), m_ip(ip), m_port(port), request(res_session_id, m_sd, m_read_byte, m_buf, m_body_len, m_port, m_method, m_url, m_ip, headers, params), response(res_write, res_chunk, res_state, res_size, sd, m_keep_alive, res_headers) {
+HttpConnect::HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port): epollfd(epollfd), m_pipe(pipe), m_sd(sd), m_ip(ip), m_port(port), request(m_sd, m_read_byte, m_buf, m_body_len, m_port, m_method, m_url, m_ip, headers, params), response(res_write, res_chunk, res_state, res_size, sd, m_keep_alive, res_headers, res_cookies) {
 #endif
     srand(time(nullptr));
     setnonblock(m_sd);
@@ -122,6 +122,7 @@ void HttpConnect::init() {
     res_state = 200;
     res_size = 0;
     res_headers.clear();
+    res_cookies.clear();
     modfd(EPOLLIN);
 }
 
@@ -468,7 +469,7 @@ void HttpConnect::init_write_data(std::string filename, bool load_lib) {
 }
 
 void HttpConnect::setCookie() {
-#ifndef NO_REDIS
+#ifdef USE_REDIS
     res_session_id = 0;
     if (pool == nullptr) return;
     RedisConn redis = pool->get();
@@ -539,6 +540,9 @@ void HttpConnect::setResponseState(int s, const char *str) {
     m_send_head.append(std::to_string(s)).append("\r\n");
     for (auto it = res_headers.cbegin(); it != res_headers.cend(); it++) {
         m_send_head.append(it->first).append(":").append(it->second).append("\r\n");
+    }
+    for (auto it = res_cookies.cbegin(); it != res_cookies.cend(); ++it) {
+        m_send_head.append("Set-Cookie: ").append(it->to_string()).append("\r\n");
     }
     LOG_INFO("socket:%d response:%s", m_sd, m_send_head.c_str());
     if (str != nullptr) {

@@ -1,4 +1,4 @@
-#ifndef NO_REDIS
+#ifdef USE_REDIS
 
 #include "session.h"
 #include "redis_pool.h"

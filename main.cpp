@@ -7,7 +7,7 @@
 #include "config.h"
 #include "log.h"
 
-#ifndef NO_REDIS
+#ifdef USE_REDIS
 #include "redis_pool.h"
 RedisPool *pool;
 #endif
@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
     tcsetattr(fileno(stdin), TCSAFLUSH, &termiosSettings);
     atexit(hookFunction);
 
-#ifndef NO_REDIS
+#ifdef USE_REDIS
     pool = nullptr;
     pool = new RedisPool(config->getRedisMinIdle(), config->getRedisMaxIdle(), config->getRedisMaxCount(), config->getRedisIp().c_str(), config->getRedisPort());
 #endif
@@ -101,7 +101,7 @@ void hookFunction() {
     termiosSettings.c_lflag |= ECHO;
     tcsetattr(fileno(stdin), TCSANOW, &termiosSettings);
 
-#ifndef NO_REDIS
+#ifdef USE_REDIS
     delete pool;
 #endif
     delete webserver;

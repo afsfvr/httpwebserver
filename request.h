@@ -4,7 +4,7 @@
 #include <string>
 #include <map>
 
-#ifndef NO_REDIS
+#ifdef USE_REDIS
 #include "session.h"
 #endif
 
@@ -19,11 +19,11 @@ struct case_insensitive_compare {
 
 class Request {
 public:
-#if defined (NO_REDIS)
-    Request(int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params);
-#else
+#if defined (USE_REDIS)
     Request(uint64_t &sessionId, int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params);
     Session getSession() const;
+#else
+    Request(int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params);
 #endif
     Request(const Request&) = delete;
     Request& operator=(const Request&) = delete;
@@ -37,7 +37,7 @@ public:
     const std::string* getParam(const std::string &key) const;
     size_t read_body(char *dest, size_t len);
 private:
-#ifndef NO_REDIS
+#ifdef USE_REDIS
     uint64_t &m_session_id;
 #endif
     int m_fd;

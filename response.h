@@ -1,8 +1,11 @@
 #ifndef RESPONSE_H_
 #define RESPONSE_H_
 
+#include <set>
 #include <map>
 #include <string>
+
+#include "cookie.h"
 
 #ifndef CASE_INSENSITIVE_COMPARE_STRUCT
 #define CASE_INSENSITIVE_COMPARE_STRUCT
@@ -15,11 +18,14 @@ struct case_insensitive_compare {
 
 class Response{
 public:
-    Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers);
+    Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers, std::set<Cookie> &cookies);
     Response(const Response&) = delete;
     Response& operator=(const Response&) = delete;
     void setContentLength(size_t len);
     void sendError(int num, const std::string &errmsg="");
+    void addCookie(const Cookie& cookie);
+    const Cookie* getCookie(const std::string& name, const std::string& domain="") const;
+    std::set<Cookie>& getCookies();
     void addHeader(const std::string &key, const std::string &value);
     std::string* getHeader(const std::string &key) const;
     std::map<std::string, std::string, case_insensitive_compare>& getHeaders();
@@ -43,6 +49,7 @@ private:
     int m_sd;
     bool &m_keep_alive;
     std::map<std::string, std::string, case_insensitive_compare> &m_headers;
+    std::set<Cookie> &m_cookies;
 };
 
 #endif
