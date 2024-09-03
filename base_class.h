@@ -32,8 +32,9 @@ void BaseClass::doHead(Request *request, Response *response, const std::string &
     size_t res_size = 0;
     bool keep_alive = true;
     std::map<std::string, std::string, case_insensitive_compare> res_headers(response->getHeaders());
+    std::set<Cookie> res_cookies;
     int fd = open("/dev/null", O_RDWR);
-    Response resp(res_write, res_chunk, res_state, res_size, fd, keep_alive, res_headers);
+    Response resp(res_write, res_chunk, res_state, res_size, fd, keep_alive, res_headers, res_cookies);
     this->doGet(request, &resp, cur_path);
     close(fd);
     response->setStatus(res_state);

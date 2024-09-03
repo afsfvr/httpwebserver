@@ -1,4 +1,4 @@
-#if ! defined (SESSION_H_) && ! defined (NO_REDIS)
+#if ! defined (SESSION_H_) && defined (USE_REDIS)
 #define SESSION_H_
 
 #include <map>

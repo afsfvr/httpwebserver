@@ -36,7 +36,7 @@ private:
     void setResponseState(int s, const char *err);
     bool run_dynamic_lib();
     const static int MAX_BUFSIZE = 4096;
-#ifndef NO_REDIS
+#ifdef USE_REDIS
     uint64_t res_session_id;
 #endif
     bool res_write;
@@ -44,6 +44,7 @@ private:
     int res_state;
     size_t res_size;
     std::map<std::string, std::string, case_insensitive_compare> res_headers;
+    std::set<Cookie> res_cookies;
     int epollfd;
     int m_pipe;
     int m_sd;

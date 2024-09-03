@@ -3,14 +3,14 @@
 
 #include "request.h"
 
-#if defined (NO_REDIS)
-Request::Request(int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params): m_fd(fd), m_read_byte(read_byte), m_buf(buf), m_body_length(body_len), m_port(port), m_method(method), m_url(url), m_ip(ip), m_headers(headers), m_params(params) {}
-#else
+#if defined (USE_REDIS)
 Request::Request(uint64_t &sessionId, int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params): m_session_id(sessionId), m_fd(fd), m_read_byte(read_byte), m_buf(buf), m_body_length(body_len), m_port(port), m_method(method), m_url(url), m_ip(ip), m_headers(headers), m_params(params) {}
 
 Session Request::getSession() const {
     return m_session_id;
 }
+#else
+Request::Request(int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params): m_fd(fd), m_read_byte(read_byte), m_buf(buf), m_body_length(body_len), m_port(port), m_method(method), m_url(url), m_ip(ip), m_headers(headers), m_params(params) {}
 #endif
 
 const int& Request::getPort() const {

@@ -16,10 +16,9 @@ endif
 
 REDIS ?= 0
 
-ifeq ($(REDIS), 0)
-	LDFLAGS += -DNO_REDIS
-	CXXFLAGS += -DNO_REDIS
-else
+ifeq ($(REDIS), 1)
+	LDFLAGS += -DUSE_REDIS
+	CXXFLAGS += -DUSE_REDIS
 	LDFLAGS += -lhiredis
 endif
 
@@ -40,6 +39,10 @@ all: $(BIN) app1 upload
 app1:
 	@echo ""
 	@$(MAKE) -C webapps/app1
+
+app2:
+	@echo ""
+	@$(MAKE) -C webapps/app2
 
 upload:
 	@echo ""

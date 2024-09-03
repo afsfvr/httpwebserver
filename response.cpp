@@ -9,7 +9,7 @@
 
 #include "response.h"
 
-Response::Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers): m_write(w), m_chunk(chunk), m_status(status), m_size(size), m_sd(sd), m_keep_alive(keep_alive), m_headers(headers) {}
+Response::Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers, std::set<Cookie> &cookies): m_write(w), m_chunk(chunk), m_status(status), m_size(size), m_sd(sd), m_keep_alive(keep_alive), m_headers(headers), m_cookies(cookies) {}
 
 void Response::setContentLength(size_t len) {
     if (m_write) return;
@@ -24,6 +24,21 @@ void Response::sendError(int num, const std::string &errmsg) {
     m_size = 0;
     flush();
     write_len(errmsg.data(), size, 0);
+}
+
+void Response::addCookie(const Cookie& cookie) {
+    if (! m_write) m_cookies.insert(cookie);
+}
+
+const Cookie* Response::getCookie(const std::string& name, const std::string& domain) const {
+    for (auto iter = m_cookies.begin(); iter != m_cookies.end(); ++iter) {
+        if (iter->domain() == domain && iter->name() == name) return &(*iter);
+    }
+    return nullptr;
+}
+
+std::set<Cookie>& Response::getCookies() {
+    return m_cookies;
 }
 
 void Response::addHeader(const std::string &key, const std::string &value) {
@@ -149,14 +164,21 @@ void Response::flush() {
         m_chunk = false;
         std::string buf = "HTTP/1.1 ";
         buf.append(std::to_string(m_status)).append("\r\n");
-        for (auto it = m_headers.cbegin(); it != m_headers.cend(); it++) {
+        for (auto it = m_headers.cbegin(); it != m_headers.cend(); ++it) {
             buf.append(it->first).append(":").append(it->second).append("\r\n");
+        }
+        for (auto it = m_cookies.cbegin(); it != m_cookies.cend(); ++it) {
+            buf.append("Set-Cookie: ").append(it->to_string()).append("\r\n");
         }
         if (m_headers.find("content-length") == m_headers.end() && m_keep_alive) {
             buf.append("Transfer-Encoding: chunked\r\n");
             m_chunk = true;
         }
-        buf.append("\r\n");
+        char buff[128] = {'\0'};
+        time_t timestamp = time(nullptr);
+        std::strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&timestamp));
+        buf.append("Date: ").append(buff);
+        buf.append("\r\n\r\n");
         write_len(buf.data(), buf.size(), 0);
         m_write = true;
     }
