@@ -283,6 +283,14 @@ HttpConnect::operator int() {
     return m_sd;
 }
 
+bool HttpConnect::operator==(const Task *task) {
+    if (this == task) {
+        return true;
+    }
+    const HttpConnect *p = dynamic_cast<const HttpConnect*>(task);
+    return p != nullptr && this->m_sd == p->m_sd;
+}
+
 void HttpConnect::run() {
     try {
         if (m_state == STATE::READ) {

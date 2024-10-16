@@ -14,15 +14,6 @@ public:
     ~BlockQueue();
     bool push(const T &data);
     T pop();
-    void exit() {
-        if (head != nullptr) {
-            delete head;
-            head = nullptr;
-        }
-        m_exit = true;
-        pthread_cond_broadcast(&cond);
-        usleep(1000 * 100);
-    }
 private:
     class Data {
     public:
@@ -41,7 +32,6 @@ private:
     Data *tail;
     pthread_mutex_t mut;
     pthread_cond_t cond;
-    bool m_exit;
 };
 
 template<typename T>
@@ -50,12 +40,10 @@ BlockQueue<T>::BlockQueue() {
     pthread_cond_init(&cond, nullptr);
     head = nullptr;
     tail = nullptr;
-    m_exit = false;
 }
 
 template<typename T>
 BlockQueue<T>::~BlockQueue() {
-    m_exit = true;
     pthread_mutex_destroy(&mut);
     pthread_cond_destroy(&cond);
     if (head != nullptr) {
@@ -65,7 +53,6 @@ BlockQueue<T>::~BlockQueue() {
 
 template<typename T>
 bool BlockQueue<T>::push(const T &data) {
-    if (m_exit) return false;
     Data *d = new Data(data);
     pthread_mutex_lock(&mut);
     if (head == nullptr) {
@@ -83,12 +70,8 @@ bool BlockQueue<T>::push(const T &data) {
 template<typename T>
 T BlockQueue<T>::pop() {
     pthread_mutex_lock(&mut);
-    while (this->head == nullptr && ! m_exit) {
+    while (this->head == nullptr) {
         pthread_cond_wait(&cond, &mut);
-    }
-    if (m_exit) {
-        pthread_mutex_unlock(&mut);
-        pthread_exit(nullptr);
     }
     Data *d = head;
     head = head->next;
