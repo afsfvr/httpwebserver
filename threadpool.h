@@ -2,58 +2,48 @@
 #define THREADPOOL_H_
 
 #include <pthread.h>
+#include <unistd.h>
 
-#include "block_queue.h"
 #include "config.h"
 
-template<class T>
+class Task {
+public:
+    virtual bool operator==(const Task *task)=0;
+    virtual void run() = 0;
+    virtual ~Task() = default;
+};
+
 class ThreadPool {
 public:
     ThreadPool();
     ThreadPool(const ThreadPool&) = delete;
     ThreadPool& operator=(const ThreadPool&) = delete;
     ~ThreadPool();
-    void addjob(T* work);
+    bool canceljob(Task *work);
+    bool addjob(Task* work);
     static void* run(void *p);
 private:
-    BlockQueue<T*> queue;
-    int threadNum;
-    pthread_t *pids;
+    struct Data {
+    public:
+        Data(Task *data): m_data(data) {
+            next = nullptr;
+        }
+        ~Data() {
+            if (next != nullptr) {
+                delete next;
+                next = nullptr;
+            }
+        }
+        Task *m_data;
+        Data *next;
+    };
+    Data *m_head;
+    Data *m_tail;
+    pthread_mutex_t m_mutex;
+    pthread_cond_t m_cond;
+    int m_num;
+    pthread_t *m_pids;
+    bool m_run;
 };
 
-template<typename T>
-ThreadPool<T>::ThreadPool() {
-    threadNum = Config::getInstance()->getThreadNum();
-    pids = new pthread_t[threadNum];
-    for (int i = 0; i < threadNum; i++) {
-        pthread_create(pids + i, nullptr, run, &queue);
-    }
-}
-
-template<typename T>
-ThreadPool<T>::~ThreadPool() {
-    queue.exit();
-    for (int i = 0; i < threadNum; i++) {
-        pthread_cancel(pids[i]);
-    }
-    for (int i = 0; i < threadNum; i++) {
-        pthread_join(pids[i], nullptr);
-    }
-    delete[] pids;
-}
-
-template<typename T>
-void ThreadPool<T>::addjob(T* work) {
-    queue.push(work);
-}
-
-template<typename T>
-void* ThreadPool<T>::run(void *p) {
-    BlockQueue<T*> *queue = static_cast<BlockQueue<T*>*>(p);
-    while (true) {
-        T *work = queue->pop();
-        work->run();
-    }
-    pthread_exit(nullptr);
-}
 #endif

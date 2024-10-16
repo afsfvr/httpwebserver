@@ -4,18 +4,20 @@
 #include <string>
 #include <map>
 
+#include "threadpool.h"
 #include "request.h"
 #include "response.h"
 
 enum class STATE;
 
-class HttpConnect {
+class HttpConnect: public Task {
 public:
     HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port);
     HttpConnect(const HttpConnect&) = delete;
     HttpConnect& operator=(const HttpConnect&) = delete;
     ~HttpConnect();
     operator int();
+    bool operator==(const Task *task);
     void run();
 private:
     unsigned char toHex(unsigned char x) const;

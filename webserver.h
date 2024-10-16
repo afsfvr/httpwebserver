@@ -22,7 +22,7 @@ private:
     int m_listenfd;
     int m_epollfd;
     int m_pipe[2];
-    ThreadPool<HttpConnect> m_pool;
+    ThreadPool m_pool;
     bool m_run;
 };
 
