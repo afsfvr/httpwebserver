@@ -69,8 +69,8 @@ void BaseClass::service(Request *request, Response *response, const std::string 
             if (name[0] == '/' || name[0] == '\\') {
                 strncpy(filename, name.c_str(), 256);
             } else {
-                strncat(filename, cur_path.c_str(), 256);
-                strncpy(filename, name.c_str(), 256 - cur_path.size());
+                strncpy(filename, cur_path.c_str(), 256);
+                strncat(filename, name.c_str(), 256 - cur_path.size());
             }
         }
     } else if (method == "HEAD") {

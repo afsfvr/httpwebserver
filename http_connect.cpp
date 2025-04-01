@@ -588,12 +588,16 @@ bool HttpConnect::run_dynamic_lib() {
                 }
                 res_headers.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
                 iter = headers.find("content-length");
-                if (iter != headers.end()) m_body_len = std::stoull(iter->second);
-                else m_body_len = 0;
+                if (iter != headers.end()) {
+                    m_body_len = std::stoull(iter->second);
+                } else {
+                    m_body_len = 0;
+                }
                 try {
                     char filename[256] = {'\0'};
                     c->service(&request, &response, m_dynamic_lib_file.substr(0, m_dynamic_lib_file.find_last_of('/')), filename);
                     if (filename[0] != '\0' && ! res_write) {
+                        res_headers.erase("Content-Type");
                         init_write_data(filename, false);
                         (reinterpret_cast<void(*)(BaseClass*)>(deleteClassFn))(c);
                         dlclose(handle);

@@ -34,15 +34,7 @@ a:
 $(BIN): $(OBJ)
 	$(CXX) $^ -o $@ $(LDFLAGS)
 
-all: $(BIN) app1 upload
-
-app1:
-	@echo ""
-	@$(MAKE) -C webapps/app1
-
-app2:
-	@echo ""
-	@$(MAKE) -C webapps/app2
+all: $(BIN) upload
 
 upload:
 	@echo ""
@@ -54,14 +46,10 @@ upload:
 -include $(DEP)
 
 clean:
-	rm -f $(OBJ) $(BIN) $(DEP)
-
-cleanApp1:
-	@echo ""
-	@$(MAKE) -C webapps/app1 clean
+	rm -f $(BIN) $(OBJ) $(DEP)
 
 cleanUpload:
 	@echo ""
 	@$(MAKE) -C webapps/upload clean
 
-cleanAll: clean cleanApp1 cleanUpload
+cleanAll: clean cleanUpload
