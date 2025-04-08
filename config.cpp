@@ -4,36 +4,24 @@
 
 #include "config.h"
 
-Config::Config(): redis_ip("127.0.0.1"), redis_port(6379), redis_name(""), redis_passwd(""), redis_min_idle(1), redis_max_idle(4), redis_max_count(8) {
-    port = 8888;
-    char *buf = get_current_dir_name();
-    root_path = buf;
-    webapps_path = buf;
-    free(buf);
-    root_path.append("/root/");
-    webapps_path.append("/webapps/");
-    webapps_so = "/main.so";
-    main_file = "/index.html";
-    async_write_log = false;
-    log_level = 3;
-    threadNum = 8;
-    type.emplace("css", "text/css");
-    type.emplace("xml", "application/xml");
-    type.emplace("png", "image/png");
-    type.emplace("jpeg", "image/jpeg");
-    type.emplace("txt", "text/plain");
-    type.emplace("ico", "image/x-icon");
-    type.emplace("avi", "video/x-msvideo");
-    type.emplace("json", "application/json");
-    type.emplace("htm", "text/html");
-    type.emplace("mp4", "video/mp4");
-    type.emplace("mp3", "audio/mpeg");
-    type.emplace("pdf", "application/pdf");
-    type.emplace("js", "application/javascript");
-    type.emplace("html", "text/html");
-    type.emplace("gif", "image/gif");
-    type.emplace("jpg", "image/jpeg");
-    type.emplace("other", "application/octet-stream");
+Config::Config(): m_port(8888), m_thread_num(8), m_log_level(3), m_async_write_log(false), m_redis_ip("127.0.0.1"), m_redis_port(6379), m_redis_min_idle(1), m_redis_max_idle(4), m_redis_max_count(8) {
+    m_type.emplace("css", "text/css");
+    m_type.emplace("xml", "application/xml");
+    m_type.emplace("png", "image/png");
+    m_type.emplace("jpeg", "image/jpeg");
+    m_type.emplace("txt", "text/plain");
+    m_type.emplace("ico", "image/x-icon");
+    m_type.emplace("avi", "video/x-msvideo");
+    m_type.emplace("json", "application/json");
+    m_type.emplace("htm", "text/html");
+    m_type.emplace("mp4", "video/mp4");
+    m_type.emplace("mp3", "audio/mpeg");
+    m_type.emplace("pdf", "application/pdf");
+    m_type.emplace("js", "application/javascript");
+    m_type.emplace("html", "text/html");
+    m_type.emplace("gif", "image/gif");
+    m_type.emplace("jpg", "image/jpeg");
+    m_type.emplace("other", "application/octet-stream");
 }
 
 Config* Config::getInstance() {
@@ -47,14 +35,13 @@ void Config::parse(int argc, char *argv[]) {
     }
     struct option argarr[] = {
         {"port", 1, nullptr, 'p'},
-        {"rootpath", 1, nullptr, 'r'},
-        {"file", 1, nullptr, 'f'},
-        {"thread", 1 , nullptr, 't'},
+        {"thread", 1, nullptr, 't'},
+        {"work", 1, nullptr, 'W'},
         {"daemon", 1, nullptr, 'd'},
         {"level", 1, nullptr, 'l'},
         {"async", 0, nullptr, 'a'},
-        {"so", 1, nullptr, 's'},
         {"webapps", 1, nullptr, 'w'},
+        {"rootpath", 1, nullptr, 'r'},
         {"redisip", 1, nullptr, 'i'},
         {"redisport", 1, nullptr, 'P'},
         {"username", 1, nullptr, 'u'},
@@ -65,68 +52,62 @@ void Config::parse(int argc, char *argv[]) {
         {"help", 0, nullptr, 'h'},
         {nullptr, 0, nullptr, 0}};
     int index = 0, c = -1;
-    while ((c = getopt_long(argc, argv, "p:r:f:t:d:l:as:w:i:P:u:S:m:M:c:h", argarr, &index)) >= 0) {
+    while ((c = getopt_long(argc, argv, "p:t:W:d:l:aw:r:i:P:u:S:m:M:c:h", argarr, &index)) >= 0) {
         switch(c) {
         case 'p':
-            this->port = atoi(optarg);
-            break;
-        case 'r':
-            this->root_path = optarg;
-            break;
-        case 'f':
-            this->main_file = optarg;
+            this->m_port = atoi(optarg);
             break;
         case 't':
-            this->threadNum = atoi(optarg);
+            this->m_thread_num = atoi(optarg);
+            break;
+        case 'W':
+            this->m_work_dir = optarg;
             break;
         case 'd':
-            this->daemon = optarg;
+            this->m_daemon = optarg;
             break;
         case 'l':
-            this->log_level = atoi(optarg);
+            this->m_log_level = atoi(optarg);
             break;
         case 'a':
-            this->async_write_log = true;
-            break;
-        case 's':
-            this->webapps_so = optarg;
-            if (webapps_so[0] != '/') webapps_so.insert(0, 1, '/');
+            this->m_async_write_log = true;
             break;
         case 'w':
-            this->webapps_path = optarg;
-            if (webapps_path.back() != '/') webapps_path.push_back('/');
+            this->m_webapps_path = optarg;
+            break;
+        case 'r':
+            this->m_root_path = optarg;
             break;
         case 'i':
-            this->redis_ip = optarg;
+            this->m_redis_ip = optarg;
             break;
         case 'P':
-            this->redis_port = atoi(optarg);
+            this->m_redis_port = atoi(optarg);
             break;
         case 'u':
-            this->redis_name = optarg;
+            this->m_redis_name = optarg;
             break;
         case 'S':
-            this->redis_passwd = optarg;
+            this->m_redis_passwd = optarg;
             break;
         case 'm':
-            this->redis_min_idle = atoi(optarg);
+            this->m_redis_min_idle = atoi(optarg);
             break;
         case 'M':
-            this->redis_max_idle = atoi(optarg);
+            this->m_redis_max_idle = atoi(optarg);
             break;
         case 'c':
-            this->redis_max_count = atoi(optarg);
+            this->m_redis_max_count = atoi(optarg);
             break;
         case 'h':
             std::cout << "-p\t--port\t\t监听端口，默认8888" << std::endl;
-            std::cout << "-r\t--rootpath\t静态资源路径" << std::endl;
-            std::cout << "-f\t--file\t\t主页，默认index.html" << std::endl;
             std::cout << "-t\t--thread\t线程数量，默认8" << std::endl;
+            std::cout << "-W\t--work\t工作路径，需为绝对路径" << std::endl;
             std::cout << "-d\t--daemon\t守护进程日志路径" << std::endl;
             std::cout << "-l\t--level\t\t日志级别,1-error,2-warn,3-info,4-debug,其它关闭日志，默认3" << std::endl;
             std::cout << "-a\t--async\t\t开启异步日志，默认同步日志" << std::endl;
-            std::cout << "-s\t--so\t\t动态库so文件的名称，默认main.so" << std::endl;
             std::cout << "-w\t--webapps\t动态库所在路径，默认为工作目录下的webapps目录" << std::endl;
+            std::cout << "-r\t--rootpath\t静态资源路径" << std::endl;
             std::cout << "-i\t--redisip\tredis的ip地址，默认为127.0.0.1" << std::endl;
             std::cout << "-P\t--redisport\tredis的端口，默认为6379" << std::endl;
             std::cout << "-u\t--username\tredis的用户名，默认为空" << std::endl;
@@ -137,81 +118,109 @@ void Config::parse(int argc, char *argv[]) {
             std::cout << "-h\t--help\t\t查看帮助" << std::endl;
             exit(0);
         default:
-            std::cout << "参数非法，输入-h或--help查看帮助" << std::endl;
+            std::cerr << "参数非法，输入-h或--help查看帮助" << std::endl;
             exit(1);
+        }
+    }
+
+    if (m_work_dir.length() == 0) {
+        char *buf = get_current_dir_name();
+        m_work_dir = buf;
+        free(buf);
+    } else if (m_work_dir.front() != '/') {
+        std::cerr << "工作路径需为绝对路径" << std::endl;
+        exit(1);
+    }
+    if (m_work_dir.back() != '/') {
+        m_work_dir.push_back('/');
+    }
+
+    if (m_webapps_path.length() == 0) {
+        m_webapps_path = m_work_dir + "webapps/";
+    } else if (m_webapps_path.front() != '/') {
+        m_webapps_path = m_work_dir + m_webapps_path;
+        if (m_webapps_path.back() != '/') {
+            m_webapps_path.push_back('/');
+        }
+    }
+
+    if (m_root_path.length() == 0) {
+        m_root_path = m_webapps_path + "root/";
+        m_root_url = "/root/";
+    } else if (m_root_path.front() != '/') {
+        m_root_url = "/" + m_root_path;
+        m_root_path = m_webapps_path + m_root_path;
+        if (m_root_path.back() != '/') {
+            m_root_path.push_back('/');
+            m_root_url.push_back('/');
         }
     }
 }
 
 int Config::getPort() const {
-    return port;
-}
-
-const std::string& Config::getRootPath() const {
-    return root_path;
-}
-
-const std::map<std::string, std::string>& Config::getType() const {
-    return type;
-}
-
-const std::string& Config::getMainFile() const {
-    return main_file;
+    return m_port;
 }
 
 int Config::getThreadNum() const {
-    return threadNum;
+    return m_thread_num;
 }
 
-const char* Config::getDaemon() const {
-    if (daemon.size() > 0) {
-        return daemon.c_str();
-    }
-    return nullptr;
+const std::string& Config::getWorkDirectory() const {
+    return m_work_dir;
 }
 
-bool Config::getAsyncWriteLog() const {
-    return async_write_log;
+const std::string& Config::getDaemon() const {
+    return m_daemon;
 }
 
 int Config::getLogLevel() const {
-    return log_level;
+    return m_log_level;
+}
+
+bool Config::isAsyncWriteLog() const {
+    return m_async_write_log;
 }
 
 const std::string& Config::getWebappsPath() const {
-    return webapps_path;
+    return m_webapps_path;
 }
 
-const std::string& Config::getWebappsSo() const {
-    return webapps_so;
+const std::string& Config::getRootPath() const {
+    return m_root_path;
+}
+
+const std::string& Config::getRootUrl() const {
+    return m_root_url;
 }
 
 const std::string& Config::getRedisIp() const {
-    return redis_ip;
+    return m_redis_ip;
 }
 
 int Config::getRedisPort() const {
-    return redis_port;
+    return m_redis_port;
 }
 
-const std::string* Config::getRedisName() const {
-    if (redis_name.empty()) return nullptr;
-    return &redis_name;
+const std::string& Config::getRedisName() const {
+    return m_redis_name;
 }
 
-const std::string* Config::getRedisPasswd() const {
-    if (redis_passwd.empty()) return nullptr;
-    return &redis_passwd;
-}
-
-int Config::getRedisMaxCount() const {
-    return redis_max_count;
+const std::string& Config::getRedisPasswd() const {
+    return m_redis_passwd;
 }
 
 int Config::getRedisMinIdle() const {
-    return redis_min_idle;
+    return m_redis_min_idle;
 }
 
 int Config::getRedisMaxIdle() const {
-    return redis_max_idle;
+    return m_redis_max_idle;
+}
+
+int Config::getRedisMaxCount() const {
+    return m_redis_max_count;
+}
+
+const std::map<std::string, std::string, case_insensitive_compare>& Config::getType() const {
+    return m_type;
 }

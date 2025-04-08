@@ -19,8 +19,6 @@
 extern RedisPool *pool;
 #endif
 
-extern std::string encoding;
-
 enum class STATE{
     READ = 1,
     WRITE,
@@ -235,10 +233,24 @@ void HttpConnect::parse_line(char *data) {
         parse_param(data);
     }
     m_url = urlDecode(url);
-    for (auto it = m_url.cbegin(); it != m_url.cend(); it++) {
-        if (*it != '/') return;
+    size_t index = m_url.find_first_not_of('/');
+    if (index == std::string::npos) {
+        m_url = Config::getInstance()->getRootUrl();
+    } else {
+        size_t index2 = m_url.find_first_of('/', index);
+        struct stat st;
+        std::string path = Config::getInstance()->getWebappsPath();
+        if (index2 == std::string::npos) {
+            path.append(m_url.substr(index));
+        } else {
+            path.append(m_url.substr(index, (index2 - index)));
+        }
+        path.append("/main.so");
+        if (stat(path.c_str(), &st) == -1) {
+            m_url.erase(0, 1);
+            m_url.insert(0, Config::getInstance()->getRootUrl());
+        }
     }
-    m_url.append(Config::getInstance()->getMainFile());
 }
 
 void HttpConnect::parse_head(char *data) {
@@ -306,7 +318,7 @@ void HttpConnect::run() {
 }
 
 void HttpConnect::write_data() {
-    init_write_data();
+    init_write_lib();
     if (! m_dynamic_lib_file.empty()) {
         setblock(m_sd);
         try {
@@ -361,117 +373,124 @@ bool HttpConnect::write_head() {
     return true;
 }
 
-void HttpConnect::init_write_data(std::string filename, bool load_lib) {
-    if (response_state != 0) return;
-    if (filename.empty()) {
-        filename = Config::getInstance()->getRootPath();
-        filename.append(m_url);
+void HttpConnect::init_write_lib() {
+    if (response_state != 0) {
+        return;
     }
-    LOG_DEBUG("初始化写的数据，filename：%s", filename.c_str());
+    int i1 = -1, i2 = m_url.size();
+    for (size_t i = 0; i < m_url.size(); i++) {
+        if (i1 == -1) {
+            if (m_url[i] != '/') i1 = i;
+        } else {
+            if (m_url[i] == '/') {
+                i2 = i;
+                break;
+            }
+        }
+    }
+    if (i1 == -1 || i2 == 0) {
+        setResponseState(400, "<h1>400</h1>");
+        return;
+    }
+    Config *config = Config::getInstance();
+    m_dynamic_lib_file = config->getWebappsPath();
+    m_dynamic_lib_file.append(m_url.substr(i1, i2 - i1)).append("/main.so");
+    if (! isFile(m_dynamic_lib_file)) {
+        LOG_DEBUG("动态库路径错误:%s", m_dynamic_lib_file.c_str());
+        m_dynamic_lib_file.clear();
+        setResponseState(404, "<h1>404</h1>");
+    }
+}
+
+void HttpConnect::init_write_file(const std::string &filename) {
+    if (response_state != 0) {
+        return;
+    }
+    LOG_DEBUG("init write file: %s", filename.c_str());
     struct stat st;
     if (stat(filename.c_str(), &st) == -1 || S_ISDIR(st.st_mode)) {
-        if (load_lib) {
-            int i1 = -1, i2 = m_url.size();
-            for (size_t i = 0; i < m_url.size(); i++) {
-                if (i1 == -1) {
-                    if (m_url[i] != '/') i1 = i;
-                } else {
-                    if (m_url[i] == '/') {
-                        i2 = i;
-                        break;
-                    }
-                }
-            }
-            if (i1 == -1 || i2 == 0) return;
-            Config *config = Config::getInstance();
-            m_dynamic_lib_file = config->getWebappsPath();
-            m_dynamic_lib_file.append(m_url.substr(i1, i2 - i1)).append("/").append(config->getWebappsSo());
-            if (stat(m_dynamic_lib_file.c_str(), &st) == -1) {
-                m_dynamic_lib_file.clear();
-                setResponseState(404, "<h1>404</h1>");
-            }
-        } else {
-            setResponseState(404, "<h1>404</h1>");
-        }
+        setResponseState(404, "<h1>404</h1>");
+        return;
+    }
+    char timebuf[32] = {'\0'};
+    std::strftime(timebuf, sizeof(timebuf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&st.st_mtim.tv_sec));
+    res_headers.emplace("Last-Modified", timebuf);
+    auto iter = headers.find("If-Modified-Since");
+    if (iter != headers.end() && iter->second == timebuf) {
+        setResponseState(304, nullptr);
+        return;
+    }
+
+    if (! (st.st_mode & S_IROTH)) { // 不可读
+        LOG_WARN("%s不可读", filename.c_str());
+        setResponseState(403, "<h1>403</h1>");
     } else {
-        char timebuf[32] = {'\0'};
-        std::strftime(timebuf, sizeof(timebuf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&st.st_mtim.tv_sec));
-        res_headers.emplace("Last-Modified", timebuf);
-        auto iter = headers.find("If-Modified-Since");
-        if (iter != headers.end() && iter->second == timebuf) {
-            setResponseState(304, nullptr);
+        int fd = open(filename.c_str(), O_RDONLY);
+        if (fd < 0) {
+            LOG_ERROR("打开文件%s失败%s", filename.c_str(), strerror(errno));
+            setResponseState(501, "<h1>501</h1>");
+            return;
+        }
+        m_file_data = (char*)mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+        close(fd);
+        if (reinterpret_cast<void*>(m_file_data) == reinterpret_cast<void*>(-1)) {
+            LOG_ERROR("mmap失败%s", strerror(errno));
+            setResponseState(501, "<h1>501</h1>");
             return;
         }
 
-        if (! (st.st_mode & S_IROTH)) { // 不可读
-            LOG_WARN("%s不可读", filename.c_str());
-            setResponseState(403, "<h1>404</h1>");
-        } else if (S_ISDIR(st.st_mode)) {
-            LOG_WARN("%s是文件夹", filename.c_str());
-            setResponseState(403, "<h1>404</h1>");
-        } else {
-            int fd = open(filename.c_str(), O_RDONLY);
-            if (fd < 0) {
-                LOG_ERROR("打开文件%s失败%s", filename.c_str(), strerror(errno));
-                setResponseState(501, "<h1>501</h1>");
-                return;
-            }
-            m_file_data = (char*)mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-            close(fd);
-            if (reinterpret_cast<void*>(m_file_data) == reinterpret_cast<void*>(-1)) {
-                LOG_ERROR("mmap失败%s", strerror(errno));
-                setResponseState(501, "<h1>501</h1>");
-                return;
-            }
-
-            auto type = Config::getInstance()->getType();
-            size_t index = filename.find_last_of('.');
-            if (index != std::string::npos) {
-                iter = type.find(filename.substr(index + 1));
-                if (iter != type.end()) {
-                    res_headers.emplace("Content-Type", iter->second);
-                } else {
-                    res_headers.emplace("Content-Type", type.find("other")->second);
-                }
+        const auto &type = Config::getInstance()->getType();
+        size_t index = filename.find_last_of('.');
+        if (index != std::string::npos) {
+            auto citer = type.find(filename.substr(index + 1));
+            if (citer != type.cend()) {
+                res_headers.emplace("Content-Type", citer->second);
             } else {
                 res_headers.emplace("Content-Type", type.find("other")->second);
             }
-            res_headers.emplace("Accept-Ranges", "bytes");
-            m_send_byte = 0;
-            m_file_length = st.st_size;
-            m_have_byte = st.st_size;
+        } else {
+            res_headers.emplace("Content-Type", type.find("other")->second);
+        }
+        res_headers.emplace("Accept-Ranges", "bytes");
+        m_send_byte = 0;
+        m_file_length = st.st_size;
+        m_have_byte = st.st_size;
 
-            auto iter = headers.find("range");
-            if (iter != headers.end()) {
-                std::string str = iter->second;
-                size_t index1 = str.find('='), index2 = str.find('-');
-                size_t i1 = 0, i2 = m_file_length;
-                if (index1 != std::string::npos && index2 != std::string::npos) {
+        auto iter = headers.find("range");
+        if (iter != headers.end()) {
+            std::string str = iter->second;
+            size_t index1 = str.find('='), index2 = str.find('-');
+            size_t i1 = 0, i2 = m_file_length;
+            if (index1 != std::string::npos && index2 != std::string::npos) {
+                try{
                     if (index1 + 1 != index2) {
                         i1 = std::stoull(str.substr(index1 + 1, index2).c_str());
                     }
                     if (index2 + 1 != str.size()) {
                         i2 = std::stoull(str.substr(index2 + 1).c_str());
                     }
-                }
-                if (i2 >= m_file_length) i2--;
-                if (i1 <= i2) {
-                    std::string value = "bytes ";
-                    value.append(std::to_string(i1)).append("-").append(std::to_string(i2)).append("/").append(std::to_string(m_file_length));
-                    res_headers.emplace("Content-Range", value);
-                    m_send_byte = i1;
-                    m_have_byte = i2 - i1 + 1;
-                    res_headers.emplace("Content-Length", std::to_string(m_have_byte));
-                    setResponseState(206, nullptr);
-                } else {
-                    setResponseState(416, "<h1>416</h1>");
-                    return;
+                } catch (const std::exception &e) {
+                    i1 = 0;
+                    i2 = m_file_length;
                 }
             }
-            if (response_state == 0) {
+            if (i2 >= m_file_length) i2--;
+            if (i1 <= i2) {
+                std::string value = "bytes ";
+                value.append(std::to_string(i1)).append("-").append(std::to_string(i2)).append("/").append(std::to_string(m_file_length));
+                res_headers.emplace("Content-Range", value);
+                m_send_byte = i1;
+                m_have_byte = i2 - i1 + 1;
                 res_headers.emplace("Content-Length", std::to_string(m_have_byte));
-                setResponseState(200, nullptr);
+                setResponseState(206, nullptr);
+            } else {
+                setResponseState(416, "<h1>416</h1>");
+                return;
             }
+        }
+        if (response_state == 0) {
+            res_headers.emplace("Content-Length", std::to_string(m_have_byte));
+            setResponseState(200, nullptr);
         }
     }
 }
@@ -586,23 +605,30 @@ bool HttpConnect::run_dynamic_lib() {
                     m_keep_alive = true;
                     res_headers.emplace("Connection", m_keep_alive?"keep-alive":"close");
                 }
-                res_headers.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
                 iter = headers.find("content-length");
                 if (iter != headers.end()) {
-                    m_body_len = std::stoull(iter->second);
+                    try {
+                        m_body_len = std::stoull(iter->second);
+                    } catch (const std::exception &e) {
+                        m_body_len = 0;
+                    }
                 } else {
                     m_body_len = 0;
                 }
                 try {
                     char filename[256] = {'\0'};
-                    c->service(&request, &response, m_dynamic_lib_file.substr(0, m_dynamic_lib_file.find_last_of('/')), filename);
+                    c->service(&request, &response, m_dynamic_lib_file.substr(0, m_dynamic_lib_file.find_last_of('/') + 1), filename);
                     if (filename[0] != '\0' && ! res_write) {
-                        res_headers.erase("Content-Type");
-                        init_write_data(filename, false);
+                        std::string name = filename;
+                        if (! isFile(name)) {
+                            name = m_dynamic_lib_file.substr(0, m_dynamic_lib_file.find_last_of('/') + 1) + name;
+                        }
+                        init_write_file(name);
                         (reinterpret_cast<void(*)(BaseClass*)>(deleteClassFn))(c);
                         dlclose(handle);
                         return true;
                     }
+                    LOG_INFO("socket:%d response status:%d", m_sd, res_state);
                     if (! res_write) {
                         res_headers.emplace("Content-Length", std::to_string(res_size));
                     }
@@ -632,4 +658,9 @@ bool HttpConnect::run_dynamic_lib() {
     }
     dlclose(handle);
     return true;
+}
+
+bool HttpConnect::isFile(const std::string &filename) const {
+    struct stat st;
+    return stat(filename.c_str(), &st) == 0 && S_ISREG(st.st_mode);
 }

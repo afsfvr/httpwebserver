@@ -9,18 +9,19 @@
 
 #include "response.h"
 
+extern std::string encoding;
+
 Response::Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers, std::set<Cookie> &cookies): m_write(w), m_chunk(chunk), m_status(status), m_size(size), m_sd(sd), m_keep_alive(keep_alive), m_headers(headers), m_cookies(cookies) {}
 
 void Response::setContentLength(size_t len) {
-    if (m_write) return;
-    m_headers.emplace("Content-Length", std::to_string(len));
+    addHeader("Content-Length", std::to_string(len));
 }
 
 void Response::sendError(int num, const std::string &errmsg) {
     if (m_write) return;
     m_status = num;
     size_t size = errmsg.size();
-    m_headers.emplace("Content-Length", std::to_string(size));
+    setContentLength(errmsg.size());
     m_size = 0;
     flush();
     write_len(errmsg.data(), size, 0);
@@ -42,7 +43,7 @@ std::set<Cookie>& Response::getCookies() {
 }
 
 void Response::addHeader(const std::string &key, const std::string &value) {
-    if (! m_write) m_headers.emplace(key, value);
+    if (! m_write) m_headers.insert(std::make_pair(key, value));
 }
 
 std::string* Response::getHeader(const std::string &key) const {
@@ -164,6 +165,10 @@ void Response::flush() {
         m_chunk = false;
         std::string buf = "HTTP/1.1 ";
         buf.append(std::to_string(m_status)).append("\r\n");
+        auto iter = m_headers.find("content-type");
+        if (iter == m_headers.end()) {
+            m_headers.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
+        }
         for (auto it = m_headers.cbegin(); it != m_headers.cend(); ++it) {
             buf.append(it->first).append(":").append(it->second).append("\r\n");
         }

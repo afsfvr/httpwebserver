@@ -33,10 +33,12 @@ private:
     void parse_param(char *data);
     void write_data();
     bool write_head();
-    void init_write_data(std::string filename="", bool load_lib=true);
+    void init_write_lib();
+    void init_write_file(const std::string &filename);
     void setCookie();
     void setResponseState(int s, const char *err);
     bool run_dynamic_lib();
+    bool isFile(const std::string &filename) const;
     const static int MAX_BUFSIZE = 4096;
 #ifdef USE_REDIS
     uint64_t res_session_id;

@@ -22,8 +22,14 @@ void hookFunction();
 int main(int argc, char *argv[]) {
     Config *config = Config::getInstance();
     config->parse(argc, argv);
-    if (config->getDaemon()) {
-        daemonize(config->getDaemon());
+    LOG_DEBUG("工作路径: %s", config->getWorkDirectory().c_str());
+    if (chdir(config->getWorkDirectory().c_str()) == -1) {
+        perror("切换工作目录失败");
+        exit(1);
+    }
+    const std::string &daemon = config->getDaemon();
+    if (daemon.length() != 0) {
+        daemonize(daemon.c_str());
     }
 
     encoding = std::locale("").name();

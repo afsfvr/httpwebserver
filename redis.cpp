@@ -79,7 +79,11 @@ bool Redis::updateExpire(uint64_t sessionId, int interval) {
         if (s.empty()) {
             interval = 600;
         } else {
-            interval = std::stoi(s);
+            try {
+                interval = std::stoi(s);
+            } catch (const std::exception &e) {
+                interval = 600;
+            }
         }
     }
     redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "EXPIRE session:%llu %d", sessionId, interval));
