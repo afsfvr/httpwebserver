@@ -10,7 +10,7 @@ static const int BUFSIZE = 2048;
 
 Log::Log() {
     Config *config = Config::getInstance();
-    async = config->getAsyncWriteLog();
+    async = config->isAsyncWriteLog();
     def_level = config->getLogLevel();
     m_write_log = true;
     if (def_level < 1 || def_level > 4) m_write_log = false;
