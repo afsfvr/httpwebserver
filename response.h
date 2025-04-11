@@ -16,7 +16,10 @@ struct case_insensitive_compare {
 };
 #endif
 
-class Response{
+class Response {
+    friend class HttpConnect;
+    constexpr static int MAX_BUFSIZE = 2048;
+
 public:
     Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers, std::set<Cookie> &cookies);
     Response(const Response&) = delete;
@@ -38,7 +41,6 @@ public:
     int getStatus() const;
 private:
     void write_len(const void *buf,size_t size, int flags) const;
-    constexpr static int MAX_BUFSIZE = 2048;
     std::string decimalToHex(int num) const;
     std::string time_tToHttpDate(time_t timestamp) const;
     bool &m_write;

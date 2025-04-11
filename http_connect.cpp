@@ -19,6 +19,8 @@
 extern RedisPool *pool;
 #endif
 
+extern std::string encoding;
+
 enum class STATE{
     READ = 1,
     WRITE,
@@ -192,9 +194,7 @@ void HttpConnect::parse() {
         str = s;
         s = strstr(str, "\r\n");
     }
-    for (int i = 0; i < m_read_byte; i++) {
-        m_buf[i] = str[i];
-    }
+    memmove(m_buf, str, m_read_byte);
     memset(m_buf + m_read_byte, 0, MAX_BUFSIZE - m_read_byte);
     if (m_state == STATE::WRITE) {
         modfd(EPOLLOUT);
@@ -325,7 +325,7 @@ void HttpConnect::write_data() {
             bool ret = run_dynamic_lib();
             setnonblock(m_sd);
             if (! ret) {
-                setResponseState(501, "<h1>501</h1>");
+                setResponseState(500, "<h1>500</h1>");
             }
         } catch (int ex) {
             setnonblock(m_sd);
@@ -339,7 +339,11 @@ void HttpConnect::write_data() {
             init();
             return;
         }
-        int len = send(m_sd, m_file_data + m_send_byte, m_have_byte, 0);
+        const char *data = m_file_data;
+        if (data == nullptr) {
+            data = response.m_buf;
+        }
+        int len = send(m_sd, data + m_send_byte, m_have_byte, 0);
         if (len == 0) throw 3;
         if (len < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -420,6 +424,11 @@ void HttpConnect::init_write_file(const std::string &filename) {
         setResponseState(304, nullptr);
         return;
     }
+    if (st.st_size == 0) {
+        res_headers.emplace("Content-Length", "0");
+        setResponseState(200);
+        return;
+    }
 
     if (! (st.st_mode & S_IROTH)) { // 不可读
         LOG_WARN("%s不可读", filename.c_str());
@@ -428,14 +437,14 @@ void HttpConnect::init_write_file(const std::string &filename) {
         int fd = open(filename.c_str(), O_RDONLY);
         if (fd < 0) {
             LOG_ERROR("打开文件%s失败%s", filename.c_str(), strerror(errno));
-            setResponseState(501, "<h1>501</h1>");
+            setResponseState(500, "<h1>500</h1>");
             return;
         }
         m_file_data = (char*)mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
         close(fd);
         if (reinterpret_cast<void*>(m_file_data) == reinterpret_cast<void*>(-1)) {
             LOG_ERROR("mmap失败%s", strerror(errno));
-            setResponseState(501, "<h1>501</h1>");
+            setResponseState(500, "<h1>500</h1>");
             return;
         }
 
@@ -565,6 +574,9 @@ void HttpConnect::setResponseState(int s, const char *str) {
     response_state = s;
     m_send_head = "HTTP/1.1 ";
     m_send_head.append(std::to_string(s)).append("\r\n");
+    if (str != nullptr) {
+        res_headers.erase("content-length");
+    }
     for (auto it = res_headers.cbegin(); it != res_headers.cend(); it++) {
         m_send_head.append(it->first).append(":").append(it->second).append("\r\n");
     }
@@ -628,22 +640,26 @@ bool HttpConnect::run_dynamic_lib() {
                         dlclose(handle);
                         return true;
                     }
-                    LOG_INFO("socket:%d response status:%d", m_sd, res_state);
                     if (! res_write) {
+                        m_have_byte = res_size;
                         res_headers.emplace("Content-Length", std::to_string(res_size));
-                    }
-                    response.flush();
-                    if (res_chunk) {
-                        const char *buf = "0\r\n\r\n";
-                        int size = 5;
-                        while (size > 0) {
-                            int len = send(m_sd, buf, size, 0);
-                            if (len > 0) {
-                                size -= len;
-                            } else if (len < 0) {
-                                throw 103;
-                            } else {
-                                throw 3;
+                        res_headers.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
+                        setResponseState(res_state);
+                    } else {
+                        LOG_INFO("socket:%d response status:%d", m_sd, res_state);
+                        response.flush();
+                        if (res_chunk) {
+                            const char *buf = "0\r\n\r\n";
+                            int size = 5;
+                            while (size > 0) {
+                                int len = send(m_sd, buf, size, 0);
+                                if (len > 0) {
+                                    size -= len;
+                                } else if (len < 0) {
+                                    throw 103;
+                                } else {
+                                    throw 3;
+                                }
                             }
                         }
                     }

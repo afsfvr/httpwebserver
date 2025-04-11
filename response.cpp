@@ -165,10 +165,7 @@ void Response::flush() {
         m_chunk = false;
         std::string buf = "HTTP/1.1 ";
         buf.append(std::to_string(m_status)).append("\r\n");
-        auto iter = m_headers.find("content-type");
-        if (iter == m_headers.end()) {
-            m_headers.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
-        }
+        m_headers.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
         for (auto it = m_headers.cbegin(); it != m_headers.cend(); ++it) {
             buf.append(it->first).append(":").append(it->second).append("\r\n");
         }

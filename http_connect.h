@@ -11,6 +11,8 @@
 enum class STATE;
 
 class HttpConnect: public Task {
+    constexpr static int MAX_BUFSIZE = 2048;
+
 public:
     HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port);
     HttpConnect(const HttpConnect&) = delete;
@@ -36,10 +38,9 @@ private:
     void init_write_lib();
     void init_write_file(const std::string &filename);
     void setCookie();
-    void setResponseState(int s, const char *err);
+    void setResponseState(int s, const char *err = nullptr);
     bool run_dynamic_lib();
     bool isFile(const std::string &filename) const;
-    const static int MAX_BUFSIZE = 4096;
 #ifdef USE_REDIS
     uint64_t res_session_id;
 #endif
