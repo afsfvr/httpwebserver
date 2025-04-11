@@ -59,7 +59,7 @@ size_t Request::read_body(char *dest, size_t len) {
     if (len <= 0 || m_body_length <= 0) return 0;
     size_t size = 0;
     if (m_read_byte > 0) {
-        m_read_byte = std::min(m_read_byte, static_cast<int>(m_body_length));
+        m_read_byte = std::min(static_cast<size_t>(m_read_byte), m_body_length);
         if (m_read_byte > static_cast<int>(len)) {
             memcpy(dest, m_buf, len);
             memmove(m_buf, m_buf + len, m_read_byte - len);

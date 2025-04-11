@@ -7,6 +7,7 @@
 #include <cstring>
 
 #include "../../base_class.h"
+#include "../../log.h"
 
 class Root: public BaseClass {
 public:
@@ -42,11 +43,21 @@ std::string Root::doGet(Request *request, Response *response, const std::string 
     }
     std::string path = url.substr(7);
     if (path.size() == 0 || path.front() != '/') path.insert(path.begin(), '/');
-    if (path.find_last_not_of('/') == std::string::npos) path = cur_path + "/res";
-    else path = cur_path + "/res" + path;
-    if (! fileExists(path)) {
-        response->sendError(404, "<h1>文件不存在</h1>");
-        return {};
+    if (path.find_last_not_of('/') == std::string::npos) {
+        path = cur_path + "res";
+        if (! fileExists(path)) {
+            if (mkdir(path.c_str(), 0755) == -1) {
+                LOG_WARN("创建文件夹失败: %s", strerror(errno));
+                response->sendError(404, "<h1>文件不存在</h1>");
+                return {};
+            }
+        }
+    } else {
+        path = cur_path + "res" + path;
+        if (! fileExists(path)) {
+            response->sendError(404, "<h1>文件不存在</h1>");
+            return {};
+        }
     }
     if (isFile(path)) {
         std::string value = "attachment;filename=";
@@ -182,7 +193,7 @@ bool Root::validate(Request *request) const {
 }
 
 std::string Root::getfilename(const std::string& path, const std::string& data) const {
-    mkdir(path.c_str(), 0777);
+    mkdir(path.c_str(), 0755);
     size_t index = data.find("filename");
     std::string filename;
     if (index == std::string::npos) {
