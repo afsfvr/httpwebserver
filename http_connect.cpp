@@ -172,6 +172,18 @@ void HttpConnect::read_data() {
     parse();
 }
 
+static bool hostError(const std::string &host) {
+    if (host.length() < 9) {
+        return true;
+    }
+    const static std::string h = "localhost";
+    for (int i = 0; i < 9; ++i) {
+        if (std::tolower(host[i]) != h[i]) {
+            return true;
+        }
+    }
+    return false;
+}
 
 void HttpConnect::parse() {
     char *str = m_buf;
@@ -197,6 +209,10 @@ void HttpConnect::parse() {
     memmove(m_buf, str, m_read_byte);
     memset(m_buf + m_read_byte, 0, MAX_BUFSIZE - m_read_byte);
     if (m_state == STATE::WRITE) {
+        auto iter = headers.find("host");
+        if (iter == headers.end() || hostError(iter->second)) {
+            setResponseState(400, "<h1>400</h1>");
+        }
         modfd(EPOLLOUT);
     } else {
         modfd(EPOLLIN);
