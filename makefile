@@ -34,7 +34,11 @@ a:
 $(BIN): $(OBJ)
 	$(CXX) $^ -o $@ $(LDFLAGS)
 
-all: $(BIN) upload
+all: $(BIN) root upload
+
+root:
+	@echo ""
+	@$(MAKE) -C webapps/root
 
 upload:
 	@echo ""
@@ -48,8 +52,12 @@ upload:
 clean:
 	rm -f $(BIN) $(OBJ) $(DEP)
 
+cleanRoot:
+	@echo ""
+	@$(MAKE) -C webapps/root clean
+
 cleanUpload:
 	@echo ""
 	@$(MAKE) -C webapps/upload clean
 
-cleanAll: clean cleanUpload
+cleanAll: clean cleanRoot cleanUpload
