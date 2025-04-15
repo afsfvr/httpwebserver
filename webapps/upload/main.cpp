@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <cstring>
+#include <random>
 
 #include "../../base_class.h"
 #include "../../log.h"
@@ -225,7 +226,10 @@ std::string Root::getfilename(const std::string& path, char *&buf, const std::st
     std::string filename;
     for (;; ++name) {
         if (*name == '\0') {
-            filename = std::to_string(time(nullptr));
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::uniform_int_distribution<> dist(0, 10000000);
+            filename = std::to_string(time(nullptr)) + std::to_string(dist(gen));
             break;
         } else if (*name == '"') {
             ++ name;
@@ -237,10 +241,16 @@ std::string Root::getfilename(const std::string& path, char *&buf, const std::st
         for (int i = 1; ; ++i) {
             const char *tmp = name + i;
             if (*tmp == '\0') {
-                filename = std::to_string(time(nullptr));
+                std::random_device rd;
+                std::mt19937 gen(rd());
+                std::uniform_int_distribution<> dist(0, 10000000);
+                filename = std::to_string(time(nullptr)) + std::to_string(dist(gen));
                 break;
             } else if (*tmp == '"') {
                 filename = std::string(name, i);
+                for (auto &c: filename) {
+                    if (! std::isalnum(c) && c != '.' && c != '_') c = '_';
+                }
                 break;
             }
         }
@@ -286,7 +296,13 @@ bool Root::writeData(int &fd, char *buf, int &offset, const std::string &filenam
         return false;
     }
 
-    char *data = strstr(buf, boundary.c_str());
+    char *data = nullptr;
+    for (size_t i = 0; i + boundary.size() <= offset; ++i) {
+        if (memcmp(buf + i, boundary.c_str(), boundary.size()) == 0) {
+            data = buf + i;
+            break;
+        }
+    }
     if (data != nullptr) {
         int length = data - buf;
         bool ret = writeLen(fd, buf, length);
