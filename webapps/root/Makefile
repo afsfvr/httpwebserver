@@ -1,21 +1,19 @@
 CC = g++
 CXX = g++
-LDFLAGS += -Wall -pthread -ldl -rdynamic
-CXXFLAGS += -Wall -MMD
-BIN = main
-SRC = $(wildcard *.cpp) 
+LDFLAGS += -shared
+CXXFLAGS += -fPIC -MMD
+BIN = main.so
+SRC = $(wildcard *.cpp)
 OBJ = $(SRC:.cpp=.o)
 DEP = $(OBJ:.o=.d)
 
 LOG ?= 1
-
 ifeq ($(LOG), 0)
 	LDFLAGS += -DNO_LOG
 	CXXFLAGS += -DNO_LOG
 endif
 
 REDIS ?= 0
-
 ifeq ($(REDIS), 1)
 	LDFLAGS += -DUSE_REDIS
 	CXXFLAGS += -DUSE_REDIS
@@ -28,21 +26,10 @@ ifeq ($(DEBUG), 1)
 	CXXFLAGS += -g
 endif
 
-a:
-	$(CXX) $(SRC) -o $(BIN) $(LDFLAGS)
+SOURCES:=$(wildcard *.cpp)
 
 $(BIN): $(OBJ)
 	$(CXX) $^ -o $@ $(LDFLAGS)
-
-all: $(BIN) root upload
-
-root:
-	@echo ""
-	@$(MAKE) -C webapps/root
-
-upload:
-	@echo ""
-	@$(MAKE) -C webapps/upload
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -51,13 +38,3 @@ upload:
 
 clean:
 	rm -f $(BIN) $(OBJ) $(DEP)
-
-cleanRoot:
-	@echo ""
-	@$(MAKE) -C webapps/root clean
-
-cleanUpload:
-	@echo ""
-	@$(MAKE) -C webapps/upload clean
-
-cleanAll: clean cleanRoot cleanUpload
