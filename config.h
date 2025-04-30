@@ -27,7 +27,6 @@ public:
     int getLogLevel() const;
     bool isAsyncWriteLog() const;
     const std::string& getWebappsPath() const;
-    const std::string& getRootPath() const;
     const std::string& getRootUrl() const;
     const std::string& getRedisIp() const;
     int getRedisPort() const;
@@ -46,7 +45,6 @@ private:
     int m_log_level;
     bool m_async_write_log;
     std::string m_webapps_path;
-    std::string m_root_path;
     std::string m_root_url;
     std::string m_redis_ip;
     int m_redis_port;

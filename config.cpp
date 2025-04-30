@@ -41,7 +41,7 @@ void Config::parse(int argc, char *argv[]) {
         {"level", 1, nullptr, 'l'},
         {"async", 0, nullptr, 'a'},
         {"webapps", 1, nullptr, 'w'},
-        {"rootpath", 1, nullptr, 'r'},
+        {"rooturl", 1, nullptr, 'r'},
         {"redisip", 1, nullptr, 'i'},
         {"redisport", 1, nullptr, 'P'},
         {"username", 1, nullptr, 'u'},
@@ -76,7 +76,7 @@ void Config::parse(int argc, char *argv[]) {
             this->m_webapps_path = optarg;
             break;
         case 'r':
-            this->m_root_path = optarg;
+            this->m_root_url = optarg;
             break;
         case 'i':
             this->m_redis_ip = optarg;
@@ -107,7 +107,7 @@ void Config::parse(int argc, char *argv[]) {
             std::cout << "-l\t--level\t\t日志级别,1-error,2-warn,3-info,4-debug,其它关闭日志，默认3" << std::endl;
             std::cout << "-a\t--async\t\t开启异步日志，默认同步日志" << std::endl;
             std::cout << "-w\t--webapps\t动态库所在路径，默认为工作目录下的webapps目录" << std::endl;
-            std::cout << "-r\t--rootpath\t静态资源路径" << std::endl;
+            std::cout << "-r\t--rooturl\t根路径，即访问ip:port的路径,默认为/root/" << std::endl;
             std::cout << "-i\t--redisip\tredis的ip地址，默认为127.0.0.1" << std::endl;
             std::cout << "-P\t--redisport\tredis的端口，默认为6379" << std::endl;
             std::cout << "-u\t--username\tredis的用户名，默认为空" << std::endl;
@@ -137,21 +137,22 @@ void Config::parse(int argc, char *argv[]) {
 
     if (m_webapps_path.length() == 0) {
         m_webapps_path = m_work_dir + "webapps/";
-    } else if (m_webapps_path.front() != '/') {
-        m_webapps_path = m_work_dir + m_webapps_path;
+    } else {
+        if (m_webapps_path.front() != '/') {
+            m_webapps_path = m_work_dir + m_webapps_path;
+        }
         if (m_webapps_path.back() != '/') {
             m_webapps_path.push_back('/');
         }
     }
 
-    if (m_root_path.length() == 0) {
-        m_root_path = m_webapps_path + "root/";
+    if (m_root_url.length() == 0) {
         m_root_url = "/root/";
-    } else if (m_root_path.front() != '/') {
-        m_root_url = "/" + m_root_path;
-        m_root_path = m_webapps_path + m_root_path;
-        if (m_root_path.back() != '/') {
-            m_root_path.push_back('/');
+    } else {
+        if (m_root_url.front() != '/') {
+            m_root_url.insert(m_root_url.begin(), '/');
+        }
+        if (m_root_url.back() != '/') {
             m_root_url.push_back('/');
         }
     }
@@ -183,10 +184,6 @@ bool Config::isAsyncWriteLog() const {
 
 const std::string& Config::getWebappsPath() const {
     return m_webapps_path;
-}
-
-const std::string& Config::getRootPath() const {
-    return m_root_path;
 }
 
 const std::string& Config::getRootUrl() const {
