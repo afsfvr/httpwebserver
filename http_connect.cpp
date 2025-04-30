@@ -212,6 +212,7 @@ void HttpConnect::parse() {
         auto iter = headers.find("host");
         if (iter == headers.end() || hostError(iter->second)) {
             setResponseState(400, "<h1>400</h1>");
+            LOG_DEBUG("socket: %d, host error: %s", m_sd, (iter == headers.end() ? "null" : iter->second.c_str()));
         }
         modfd(EPOLLOUT);
     } else {
@@ -225,7 +226,7 @@ void HttpConnect::parse_line(char *data) {
     if (url == nullptr) {
         m_state = STATE::WRITE;
         setResponseState(400, "<h1>400</h1>");
-        LOG_ERROR("解析请求出错");
+        LOG_ERROR("解析url出错: nullptr, data: %s", data);
         return;
     }
     *url++ = '\0';
@@ -239,7 +240,7 @@ void HttpConnect::parse_line(char *data) {
     if (http_version == nullptr) {
         m_state = STATE::WRITE;
         setResponseState(400, "<h1>400</h1>");
-        LOG_ERROR("解析请求出错");
+        LOG_ERROR("解析http version出错: nullptr, data: %s", data);
         return;
     }
     *http_version++ = '\0';
@@ -276,7 +277,7 @@ void HttpConnect::parse_head(char *data) {
         m_state = STATE::WRITE;
         if (data[0] != '\0') {
             setResponseState(400, "<h1>400</h1>");
-            LOG_ERROR("解析请求头出错");
+            LOG_ERROR("解析请求头出错, 未找到':', data: %s", data);
         }
         return;
     }
@@ -342,6 +343,7 @@ void HttpConnect::write_data() {
             setnonblock(m_sd);
             if (! ret) {
                 setResponseState(500, "<h1>500</h1>");
+                LOG_DEBUG("socket:%d,运行动态库错误", m_sd);
             }
         } catch (int ex) {
             setnonblock(m_sd);
@@ -410,6 +412,7 @@ void HttpConnect::init_write_lib() {
     }
     if (i1 == -1 || i2 == 0) {
         setResponseState(400, "<h1>400</h1>");
+        LOG_DEBUG("socket:%d,解析动态库路径错误, url: %s", m_sd, m_url.c_str());
         return;
     }
     Config *config = Config::getInstance();
@@ -510,6 +513,7 @@ void HttpConnect::init_write_file(const std::string &filename) {
                 setResponseState(206, nullptr);
             } else {
                 setResponseState(416, "<h1>416</h1>");
+                LOG_DEBUG("sd: %d, range请求的范围错误: %s", m_sd, str.c_str());
                 return;
             }
         }
