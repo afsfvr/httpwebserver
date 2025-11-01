@@ -3,6 +3,7 @@
 
 #include <sys/resource.h>
 #include <map>
+#include <functional>
 
 #include "threadpool.h"
 #include "http_connect.h"
@@ -15,7 +16,9 @@ public:
     ~WebServer();
     void eventLoop();
     int setnonblock(int fd);
-    void add_connect();
+    void add_connect_v4();
+    void add_connect_v6();
+    void add_connect_v4_v6();
     void stop();
 private:
     struct rlimit m_limit;
@@ -24,6 +27,7 @@ private:
     int m_pipe[2];
     ThreadPool m_pool;
     bool m_run;
+    const std::function<void()> m_add_connect;
 };
 
 #endif
