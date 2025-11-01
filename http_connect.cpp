@@ -173,6 +173,7 @@ void HttpConnect::read_data() {
 }
 
 static bool hostError(const std::string &host) {
+    return false;
     if (host.length() < 9) {
         return true;
     }
@@ -221,7 +222,7 @@ void HttpConnect::parse() {
 }
 
 void HttpConnect::parse_line(char *data) {
-    LOG_INFO("socket:%d request:%s", m_sd, data);
+    LOG_INFO("socket:%d request:%s, ip: %s, port: %d", m_sd, data, m_ip.c_str(), m_port);
     char *url = strpbrk(data, " \t");
     if (url == nullptr) {
         m_state = STATE::WRITE;
@@ -587,6 +588,9 @@ void HttpConnect::setResponseState(int s, const char *str) {
         m_keep_alive = true;
         res_headers.emplace("Connection", "keep-alive");
     }
+    if (res_headers.find("content-encoding") == res_headers.end()) {
+        res_headers.emplace("Content-Encoding", "identity");
+    }
     char buf[128] = {'\0'};
     time_t timestamp = time(nullptr);
     std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&timestamp));
@@ -607,8 +611,9 @@ void HttpConnect::setResponseState(int s, const char *str) {
     if (str != nullptr) {
         m_send_head.append("Content-Length: ").append(std::to_string(strlen(str))).append("\r\n\r\n").append(str);
         m_have_byte = 0;
+    } else {
+        m_send_head.append("\r\n");
     }
-    m_send_head.append("\r\n");
 }
 
 bool HttpConnect::run_dynamic_lib() {

@@ -36,6 +36,8 @@ public:
     int getRedisMaxIdle() const;
     int getRedisMaxCount() const;
     const std::map<std::string, std::string, case_insensitive_compare>& getType() const;
+    bool allowIpv4() const;
+    bool allowIpv6() const;
 private:
     Config();
     int m_port;
@@ -54,6 +56,8 @@ private:
     int m_redis_max_idle;
     int m_redis_max_count;
     std::map<std::string, std::string, case_insensitive_compare> m_type;
+    bool m_ipv4;
+    bool m_ipv6;
 };
 
 #endif

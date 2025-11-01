@@ -4,7 +4,7 @@
 
 #include "config.h"
 
-Config::Config(): m_port(8888), m_thread_num(8), m_log_level(3), m_async_write_log(false), m_redis_ip("127.0.0.1"), m_redis_port(6379), m_redis_min_idle(1), m_redis_max_idle(4), m_redis_max_count(8) {
+Config::Config(): m_port(8888), m_thread_num(8), m_log_level(3), m_async_write_log(false), m_redis_ip("127.0.0.1"), m_redis_port(6379), m_redis_min_idle(1), m_redis_max_idle(4), m_redis_max_count(8), m_ipv4{false}, m_ipv6{false} {
     m_type.emplace("css", "text/css");
     m_type.emplace("xml", "application/xml");
     m_type.emplace("png", "image/png");
@@ -52,8 +52,14 @@ void Config::parse(int argc, char *argv[]) {
         {"help", 0, nullptr, 'h'},
         {nullptr, 0, nullptr, 0}};
     int index = 0, c = -1;
-    while ((c = getopt_long(argc, argv, "p:t:W:d:l:aw:r:i:P:u:S:m:M:c:h", argarr, &index)) >= 0) {
+    while ((c = getopt_long(argc, argv, "46p:t:W:d:l:aw:r:i:P:u:S:m:M:c:h", argarr, &index)) >= 0) {
         switch(c) {
+        case '4':
+            this->m_ipv4 = true;
+            break;
+        case '6':
+            this->m_ipv6 = true;
+            break;
         case 'p':
             this->m_port = atoi(optarg);
             break;
@@ -123,6 +129,9 @@ void Config::parse(int argc, char *argv[]) {
         }
     }
 
+    if (! m_ipv4 && ! m_ipv6) {
+        m_ipv4 = m_ipv6 = true;
+    }
     if (m_work_dir.length() == 0) {
         char *buf = get_current_dir_name();
         m_work_dir = buf;
@@ -220,4 +229,12 @@ int Config::getRedisMaxCount() const {
 
 const std::map<std::string, std::string, case_insensitive_compare>& Config::getType() const {
     return m_type;
+}
+
+bool Config::allowIpv4() const {
+    return m_ipv4;
+}
+
+bool Config::allowIpv6() const {
+    return m_ipv6;
 }
