@@ -26,6 +26,7 @@ public:
     Response& operator=(const Response&) = delete;
     void setContentLength(size_t len);
     void sendError(int num, const std::string &errmsg="");
+    void sendRedirect(const std::string &url);
     void addCookie(const Cookie& cookie);
     const Cookie* getCookie(const std::string& name, const std::string& domain="") const;
     std::set<Cookie>& getCookies();
