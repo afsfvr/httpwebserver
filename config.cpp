@@ -34,6 +34,8 @@ void Config::parse(int argc, char *argv[]) {
         throw std::invalid_argument(std::string("参数非法:nullptr"));
     }
     struct option argarr[] = {
+        {"ipv4", 0, nullptr, '4'},
+        {"ipv6", 0, nullptr, '6'},
         {"port", 1, nullptr, 'p'},
         {"thread", 1, nullptr, 't'},
         {"work", 1, nullptr, 'W'},
@@ -106,6 +108,8 @@ void Config::parse(int argc, char *argv[]) {
             this->m_redis_max_count = atoi(optarg);
             break;
         case 'h':
+            std::cout << "-4\t--ipv4\t\t允许ipv4访问(默认同时允许ipv4和ipv6)" << std::endl;
+            std::cout << "-6\t--ipv6\t\t允许ipv6访问(默认同时允许ipv4和ipv6)" << std::endl;
             std::cout << "-p\t--port\t\t监听端口，默认8888" << std::endl;
             std::cout << "-t\t--thread\t线程数量，默认8" << std::endl;
             std::cout << "-W\t--work\t工作路径，需为绝对路径" << std::endl;

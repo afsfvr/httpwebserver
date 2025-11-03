@@ -27,6 +27,15 @@ void Response::sendError(int num, const std::string &errmsg) {
     write_len(errmsg.data(), size, 0);
 }
 
+void Response::sendRedirect(const std::string &url) {
+    if (m_write) return;
+    m_status = 302;
+    setContentLength(0);
+    m_size = 0;
+    addHeader("Location", url);
+    flush();
+}
+
 void Response::addCookie(const Cookie& cookie) {
     if (! m_write) m_cookies.insert(cookie);
 }

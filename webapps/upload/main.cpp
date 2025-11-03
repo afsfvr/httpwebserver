@@ -6,9 +6,12 @@
 #include <dirent.h>
 #include <cstring>
 #include <random>
+#include <iomanip>
 
 #include "../../base_class.h"
 #include "../../log.h"
+
+extern std::string encoding;
 
 class Root: public BaseClass {
 public:
@@ -26,6 +29,8 @@ private:
     bool writeLen(int fd, const void *buf, size_t size) const;
     bool writeData(int &fd, char *buf, int &offset, const std::string &filename, const std::string &boundary) const;
     std::string htmlEscape(const std::string &input) const;
+    std::string urlEncode(const std::string &value) const;
+    std::string makeContentDisposition(const std::string &filename) const;
 };
 
 extern "C" BaseClass* createClass() {
@@ -63,9 +68,7 @@ std::string Root::doGet(Request *request, Response *response, const std::string 
         }
     }
     if (isFile(path)) {
-        std::string value = "attachment;filename=";
-        value += url.substr(url.find_last_of('/') + 1);
-        response->addHeader("Content-Disposition", value);
+        response->addHeader("Content-Disposition", makeContentDisposition(url.substr(url.find_last_of('/') + 1)));
         return path;
     }
     response->write_data("<!DOCTYPE html><html lang='zh'><head><meta charset='UTF-8'><meta content='width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=0'name='viewport'><title>文件上传</title><script>function upload(){const uploadFile=document.getElementsByName('uploadFile')[0];if(uploadFile!==undefined&&uploadFile.value!==''){return true}else{alert('未选择文件!');return false}}function del(id){if(confirm('确认删除吗？')){const req=new XMLHttpRequest();const div=document.getElementById(id);if(div===undefined||div===null||div.getElementsByTagName('a').length!==1)alert('未找到该文件!');const a=div.getElementsByTagName('a')[0];req.open('DELETE',a.href);req.send();req.onreadystatechange=function(){if(req.readyState===4){alert(req.responseText);if(req.status===200&&req.responseText==='删除成功')div.remove()}}}}</script></head><body><form action=''method='post'enctype='multipart/form-data'>选择一个文件:<input type='file'name='uploadFile'multiple='multiple'/><input id='sub'type='submit'onclick='return upload()'value='上传'/></form><br/>");
@@ -119,37 +122,41 @@ void Root::doPost(Request *request, Response *response, const std::string &cur_p
         int fd = -1;
         int num = 0, success = 0;
         std::string filename;
-        while ((len = request->read_body(buf + offset, 4095 - offset)) > 0 || offset > 0) {
-            int bufsize = -1;
-            if (len > 0) {
-                offset += len;
-            } else {
-                bufsize = offset;
-            }
-            buf[offset] = '\0';
-            if (fd == -1) {
-                filename.clear();
-                char *data = buf;
-                filename = getfilename(path, data, boundary);
-                if (filename.length() > 0) {
-                    ++ num;
-                    fd = open(filename.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
-                    offset = offset - (data - buf);
-                    memmove(buf, data, offset);
-                    if (fd < 0) {
-                        LOG_WARN("创建文件%s失败: %s", filename.c_str(), strerror(errno));
+        try {
+            while ((len = request->read_body(buf + offset, 4095 - offset)) > 0 || offset > 0) {
+                int bufsize = -1;
+                if (len > 0) {
+                    offset += len;
+                } else {
+                    bufsize = offset;
+                }
+                buf[offset] = '\0';
+                if (fd == -1) {
+                    filename.clear();
+                    char *data = buf;
+                    filename = getfilename(path, data, boundary);
+                    if (filename.length() > 0) {
+                        ++ num;
+                        fd = open(filename.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
+                        offset = offset - (data - buf);
+                        memmove(buf, data, offset);
+                        if (fd < 0) {
+                            LOG_WARN("创建文件%s失败: %s", filename.c_str(), strerror(errno));
+                        }
+                    } else if (offset >= 4000) {
+                        offset = 0;
                     }
-                } else if (offset >= 4000) {
-                    offset = 0;
+                } else {
+                    if (writeData(fd, buf, offset, filename, endboundary)) {
+                        ++ success;
+                    }
                 }
-            } else {
-                if (writeData(fd, buf, offset, filename, endboundary)) {
-                    ++ success;
+                if (bufsize == offset) { // 没有收到数据且处理后大小无变化
+                    break;
                 }
             }
-            if (bufsize == offset) { // 没有收到数据且处理后大小无变化
-                break;
-            }
+        } catch (int i) {
+            LOG_WARN("throw error: %d %s", i, strerror(errno));
         }
         if (fd != -1) {
             close(fd);
@@ -248,9 +255,6 @@ std::string Root::getfilename(const std::string& path, char *&buf, const std::st
                 break;
             } else if (*tmp == '"') {
                 filename = std::string(name, i);
-                for (auto &c: filename) {
-                    if (! std::isalnum(c) && c != '.' && c != '_') c = '_';
-                }
                 break;
             }
         }
@@ -367,5 +371,28 @@ std::string Root::htmlEscape(const std::string &input) const {
         }
     }
     return escaped;
+}
+
+std::string Root::urlEncode(const std::string &value) const {
+    std::ostringstream escaped;
+    escaped.fill('0');
+    escaped << std::hex << std::uppercase;
+
+    for (const unsigned char c: value) {
+        // 仅保留安全字符：A-Z a-z 0-9 - _ . ~
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            escaped << c;
+        } else {
+            escaped << '%' << std::setw(2) << int(c);
+        }
+    }
+
+    return escaped.str();
+}
+
+std::string Root::makeContentDisposition(const std::string &filename) const {
+    std::ostringstream header;
+    header << "attachment; filename*=" << encoding << "''" << urlEncode(filename);
+    return header.str();
 }
 
