@@ -1,22 +1,23 @@
 CC = g++
 CXX = g++
-LDFLAGS += -Wall -pthread -ldl -rdynamic
-CXXFLAGS += -Wall -MMD
 BIN = main
 SRC = $(wildcard *.cpp) 
 OBJ = $(SRC:.cpp=.o)
 DEP = $(OBJ:.o=.d)
+SUBDIRS := root upload proxy ababab
+
+LDFLAGS += -Wall -pthread -rdynamic
+LDLIBS += -ldl
+CXXFLAGS += -Wall -MMD
 
 LOG ?= 1
 ifeq ($(LOG), 0)
-	LDFLAGS += -DNO_LOG
 	CXXFLAGS += -DNO_LOG
 endif
 
 REDIS ?= 0
 ifeq ($(REDIS), 1)
-	LDFLAGS += -lhiredis
-	LDFLAGS += -DUSE_REDIS
+	LDLIBS += -lhiredis
 	CXXFLAGS += -DUSE_REDIS
 endif
 
@@ -26,18 +27,16 @@ ifeq ($(DEBUG), 1)
 	CXXFLAGS += -g
 endif
 
+.PHONY: all clean cleanAll $(SUBDIRS)
+
 $(BIN): $(OBJ)
-	$(CXX) $^ -o $@ $(LDFLAGS)
+	$(CXX) $(LDFLAGS) $^ -o $@ $(LDLIBS)
 
-all: $(BIN) root upload
+all: $(BIN) $(SUBDIRS)
 
-root:
-	@echo ""
-	@$(MAKE) -C webapps/root
-
-upload:
-	@echo ""
-	@$(MAKE) -C webapps/upload
+$(SUBDIRS):
+	@printf "\nBuilding %s ...\n" "$@"
+	@$(MAKE) -C webapps/$@
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -47,12 +46,8 @@ upload:
 clean:
 	rm -f $(BIN) $(OBJ) $(DEP)
 
-cleanRoot:
-	@echo ""
-	@$(MAKE) -C webapps/root clean
-
-cleanUpload:
-	@echo ""
-	@$(MAKE) -C webapps/upload clean
-
-cleanAll: clean cleanRoot cleanUpload
+cleanAll: clean
+	@for dir in $(SUBDIRS); do \
+		printf "\n→ Cleaning %s ...\n" "$$dir"; \
+		$(MAKE) -C webapps/$$dir clean; \
+	done
