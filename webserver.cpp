@@ -4,6 +4,7 @@
 #include <sys/epoll.h>
 #include <netinet/ip.h>
 #include <unistd.h>
+#include <fstream>
 #include <cstring>
 #include <string>
 
@@ -94,6 +95,7 @@ WebServer::WebServer():
         LOG_ERROR("pipe:%s", strerror(errno));
         exit(1);
     }
+    setnonblock(m_pipe[0]);
 
     if ((m_epollfd = epoll_create(8)) < 0) {
         close(m_listenfd);
@@ -109,9 +111,11 @@ WebServer::WebServer():
     ev.data.fd = m_pipe[0];
     ev.events = EPOLLIN;
     epoll_ctl(m_epollfd, EPOLL_CTL_ADD, m_pipe[0], &ev);
+    loadBlackList();
 }
 
 WebServer::~WebServer() {
+    saveBlackList();
     epoll_ctl(m_epollfd, EPOLL_CTL_DEL, m_listenfd, nullptr);
     epoll_ctl(m_epollfd, EPOLL_CTL_DEL, m_pipe[0], nullptr);
     close(m_listenfd);
@@ -134,18 +138,11 @@ void WebServer::eventLoop() {
             if (fd == m_listenfd) {
                 m_add_connect();
             } else if (fd == m_pipe[0]) {
-                HttpConnect *conn = nullptr;
-                ssize_t len = read(m_pipe[0], &conn, sizeof(HttpConnect*));
-                if (len == sizeof(HttpConnect*)) {
-                    LOG_DEBUG("管道删除文件描述符%d", (int)*conn);
-                    delete conn;
-                } else {
-                    LOG_WARN("管道读数据时返回%d，应为%d, error:%d", len, sizeof(HttpConnect*), errno);
-                }
+                handlePipeEvent();
             } else {
                 HttpConnect *conn = reinterpret_cast<HttpConnect*>(events[i].data.ptr);
                 if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
-                    LOG_DEBUG("收到事件%d,删除文件描述符%d", events[i].events, fd);
+                    LOG_DEBUG("收到事件%d,删除文件描述符%d", events[i].events, static_cast<int>(*conn));
                     delete conn;
                 } else if (events[i].events & (EPOLLIN | EPOLLOUT)) {
                     m_pool.addjob(conn);
@@ -173,6 +170,11 @@ void WebServer::add_connect_v4() {
     LOG_DEBUG("收到新连接,sd = %d", sd);
     char ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &address.sin_addr, ip, INET_ADDRSTRLEN);
+    if (inBlackList(ip)) {
+        LOG_DEBUG("ip %s 在黑名单内，关闭连接", ip);
+        close(sd);
+        return;
+    }
     new HttpConnect(m_epollfd, m_pipe[1], sd, ip, ntohs(address.sin_port));
 }
 
@@ -187,6 +189,11 @@ void WebServer::add_connect_v6() {
     LOG_DEBUG("收到新连接,sd = %d", sd);
     char ip[INET6_ADDRSTRLEN];
     inet_ntop(AF_INET6, &address.sin6_addr, ip, INET6_ADDRSTRLEN);
+    if (inBlackList(ip)) {
+        LOG_DEBUG("ip %s 在黑名单内，关闭连接", ip);
+        close(sd);
+        return;
+    }
     new HttpConnect(m_epollfd, m_pipe[1], sd, ip, ntohs(address.sin6_port));
 }
 
@@ -207,6 +214,11 @@ void WebServer::add_connect_v4_v6() {
     } else {
         inet_ntop(AF_INET6, &address.sin6_addr, ip, INET6_ADDRSTRLEN);
     }
+    if (inBlackList(ip)) {
+        LOG_DEBUG("ip %s 在黑名单内，关闭连接", ip);
+        close(sd);
+        return;
+    }
     new HttpConnect(m_epollfd, m_pipe[1], sd, ip, ntohs(address.sin6_port));
 }
 
@@ -214,4 +226,112 @@ void WebServer::stop() {
     m_run = false;
     int i = -1;
     write(m_pipe[1], &i, 4);
+}
+
+void WebServer::handlePipeEvent() {
+    uint8_t tmp[1024];
+
+    while (true) {
+        ssize_t len = read(m_pipe[0], tmp, sizeof(tmp));
+        if (len > 0) {
+            m_pipeBuf.insert(m_pipeBuf.end(), tmp, tmp + len);
+        } else if (len == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            break;
+        } else if (len == -1 && errno == EINTR) {
+            continue;
+        } else if (len == 0) {
+            LOG_WARN("管道被关闭");
+            return;
+        } else {
+            LOG_WARN("从管道读取出错: %s", strerror(errno));
+            return;
+        }
+    }
+
+    LOG_DEBUG("管道收到数据，共计%d字节", m_pipeBuf.size());
+    size_t offset = 0;
+    while (true) {
+        if (m_pipeBuf.size() - offset < sizeof(uint32_t)) break;
+
+        uint32_t size;
+        memcpy(&size, m_pipeBuf.data() + offset, sizeof(uint32_t));
+        if (m_pipeBuf.size() - offset < sizeof(uint32_t) + size) break;
+
+        const uint8_t* payload = reinterpret_cast<const uint8_t*>(m_pipeBuf.data() + offset + sizeof(uint32_t));
+        if (size == sizeof(HttpConnect*)) {
+            HttpConnect* conn = nullptr;
+            memcpy(&conn, payload, sizeof(HttpConnect*));
+            LOG_DEBUG("管道删除文件描述符 %d", (int)*conn);
+            delete conn;
+        } else {
+            std::string data(reinterpret_cast<const char*>(payload), size);
+            LOG_DEBUG("添加黑名单: %s", data.c_str());
+            addBlackList(data.c_str());
+        }
+
+        offset += sizeof(uint32_t) + size; // 移动到下一帧
+    }
+
+    if (offset > 0)
+        m_pipeBuf.erase(m_pipeBuf.begin(), m_pipeBuf.begin() + offset);
+}
+
+void WebServer::addBlackList(const std::string &ip, bool save) {
+    std::string trimmed = trim(ip);
+    if (trimmed.length() == 0) return;
+    auto iter = m_blackList.insert(trimmed);
+    if (iter.second && save) {
+        saveBlackList();
+    }
+}
+
+void WebServer::removeBlackList(const std::string &ip, bool save) {
+    int ret = m_blackList.erase(ip);
+    if (ret > 0 && save) {
+        saveBlackList();
+    }
+}
+
+void WebServer::loadBlackList() {
+    m_blackList.clear();
+    std::ifstream fin(m_blackListFile);
+    if (!fin.is_open()) {
+        LOG_WARN("无法打开黑名单文件%s: %s", m_blackListFile.c_str(), std::strerror(errno));
+        return;
+    }
+
+    std::string ip;
+    while (std::getline(fin, ip)) {
+        std::string trimmed = trim(ip);
+        if (trimmed.length() != 0) {
+            m_blackList.insert(ip);
+        }
+    }
+    LOG_DEBUG("加载黑名单完成，共计%d个ip", m_blackList.size());
+    fin.close();
+}
+
+void WebServer::saveBlackList() {
+    std::ofstream fout(m_blackListFile, std::ofstream::out | std::ofstream::trunc);
+    if (! fout.is_open()) {
+        LOG_WARN("无法写入黑名单文件%s: %s", m_blackListFile.c_str(), std::strerror(errno));
+        return;
+    }
+
+    for (const auto &ip : m_blackList) {
+        fout << ip << "\n";
+    }
+    fout.close();
+    LOG_DEBUG("保存黑名单完成，共计%d个ip", m_blackList.size());
+}
+
+bool WebServer::inBlackList(const std::string &ip) {
+    return m_blackList.find(ip) != m_blackList.end();
+}
+
+std::string WebServer::trim(const std::string &str) {
+    size_t start = str.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) return "";
+    size_t end = str.find_last_not_of(" \t\r\n");
+    return str.substr(start, end - start + 1);
 }

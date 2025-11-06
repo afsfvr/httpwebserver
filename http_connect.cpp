@@ -8,6 +8,7 @@
 #include <iostream>
 #include <cstring>
 #include <ctime>
+#include <algorithm>
 
 #include "base_class.h"
 #include "log.h"
@@ -21,7 +22,7 @@ extern RedisPool *pool;
 
 extern std::string encoding;
 
-enum class STATE{
+enum class STATE {
     READ = 1,
     WRITE,
     CLOSE
@@ -173,17 +174,13 @@ void HttpConnect::read_data() {
 }
 
 static bool hostError(const std::string &host) {
-    return false;
-    if (host.length() < 9) {
-        return true;
+    static constexpr const char *hosts[] = { "localhost", "127.0.0.1" };
+    std::string lowerHost(host);
+    std::transform(lowerHost.begin(), lowerHost.end(), lowerHost.begin(), [](unsigned char c) { return std::tolower(c); });
+    for (const auto &h: hosts) {
+        if (lowerHost == h) return false;
     }
-    const static std::string h = "localhost";
-    for (int i = 0; i < 9; ++i) {
-        if (std::tolower(host[i]) != h[i]) {
-            return true;
-        }
-    }
-    return false;
+    return true;
 }
 
 void HttpConnect::parse() {
@@ -212,8 +209,11 @@ void HttpConnect::parse() {
     if (m_state == STATE::WRITE) {
         auto iter = headers.find("host");
         if (iter == headers.end() || hostError(iter->second)) {
-            setResponseState(400, "<h1>400</h1>");
+            uint32_t len = m_ip.length();
+            write(m_pipe, &len, sizeof(len));
+            write(m_pipe, m_ip.c_str(), len);
             LOG_DEBUG("socket: %d, host error: %s", m_sd, (iter == headers.end() ? "null" : iter->second.c_str()));
+            throw 5;
         }
         modfd(EPOLLOUT);
     } else {
@@ -331,6 +331,8 @@ void HttpConnect::run() {
     } catch (int i) {
         m_state = STATE::CLOSE;
         HttpConnect *conn = this;
+        static constexpr const uint32_t size = sizeof(HttpConnect*);
+        write(m_pipe, &size, sizeof(size));
         write(m_pipe, &conn, sizeof(HttpConnect*));
     }
 }
