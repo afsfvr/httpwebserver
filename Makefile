@@ -4,7 +4,7 @@ BIN = main
 SRC = $(wildcard *.cpp) 
 OBJ = $(SRC:.cpp=.o)
 DEP = $(OBJ:.o=.d)
-SUBDIRS := root upload proxy ababab
+SUBDIRS := root upload
 
 LDFLAGS += -Wall -pthread -rdynamic
 LDLIBS += -ldl
@@ -31,6 +31,9 @@ endif
 
 $(BIN): $(OBJ)
 	$(CXX) $(LDFLAGS) $^ -o $@ $(LDLIBS)
+
+authorize:
+	[ -x $(BIN) ] && sudo setcap 'cap_net_bind_service=+ep' $(BIN)
 
 all: $(BIN) $(SUBDIRS)
 

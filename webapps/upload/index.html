@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang='zh'>
+
+<head>
+    <meta charset='UTF-8'>
+    <meta content='width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=0' name='viewport'>
+    <title>文件上传</title>
+    <script>
+        function upload() {
+            const uploadFile = document.getElementsByName('uploadFile')[0];
+            if (uploadFile !== undefined && uploadFile.value !== '') {
+                return true;
+            } else {
+                alert('未选择文件!');
+                return false;
+            }
+        }
+        function del(id) {
+            if (confirm('确认删除吗？')) {
+                const req = new XMLHttpRequest();
+                const div = document.getElementById(id);
+                if (div === undefined || div === null || div.getElementsByTagName('a').length !== 1) {
+                    alert('未找到该文件!');
+                    return;
+                }
+                const a = div.getElementsByTagName('a')[0];
+                req.open('DELETE', a.href);
+                req.send();
+                req.onreadystatechange = function () {
+                    if (req.readyState === 4) {
+                        alert(req.responseText);
+                        if (req.status === 200 && req.responseText === '删除成功') {
+                            div.remove();
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body>
+    <form action='' method='post' enctype='multipart/form-data'>
+        选择一个文件:
+        <input type='file' name='uploadFile' multiple='multiple' />
+        <input id='sub' type='submit' onclick='return upload()' value='上传' />
+    </form>
+    <br />
+
+    <!-- 返回上一级 -->
+    {{BACK_LINK}}
+
+    <!-- 文件列表 -->
+    {{FILE_LIST}}
+
+</body>
+
+</html>

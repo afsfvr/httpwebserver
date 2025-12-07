@@ -31,6 +31,7 @@ private:
     std::string htmlEscape(const std::string &input) const;
     std::string urlEncode(const std::string &value) const;
     std::string makeContentDisposition(const std::string &filename) const;
+    void replaceAll(std::string &str, const std::string &before, const std::string &after);
 };
 
 extern "C" BaseClass* createClass() {
@@ -49,6 +50,7 @@ std::string Root::doGet(Request *request, Response *response, const std::string 
         response->sendError(403, "非法请求");
         return {};
     }
+
     std::string path = url.substr(7);
     if (path.size() == 0 || path.front() != '/') path.insert(path.begin(), '/');
     if (path.find_last_not_of('/') == std::string::npos) {
@@ -67,15 +69,31 @@ std::string Root::doGet(Request *request, Response *response, const std::string 
             return {};
         }
     }
+
     if (isFile(path)) {
         response->addHeader("Content-Disposition", makeContentDisposition(url.substr(url.find_last_of('/') + 1)));
         return path;
     }
-    response->write_data("<!DOCTYPE html><html lang='zh'><head><meta charset='UTF-8'><meta content='width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=0'name='viewport'><title>文件上传</title><script>function upload(){const uploadFile=document.getElementsByName('uploadFile')[0];if(uploadFile!==undefined&&uploadFile.value!==''){return true}else{alert('未选择文件!');return false}}function del(id){if(confirm('确认删除吗？')){const req=new XMLHttpRequest();const div=document.getElementById(id);if(div===undefined||div===null||div.getElementsByTagName('a').length!==1)alert('未找到该文件!');const a=div.getElementsByTagName('a')[0];req.open('DELETE',a.href);req.send();req.onreadystatechange=function(){if(req.readyState===4){alert(req.responseText);if(req.status===200&&req.responseText==='删除成功')div.remove()}}}}</script></head><body><form action=''method='post'enctype='multipart/form-data'>选择一个文件:<input type='file'name='uploadFile'multiple='multiple'/><input id='sub'type='submit'onclick='return upload()'value='上传'/></form><br/>");
-    std::string urlPrefix = path.substr(path.find("res") + 3);
-    if (urlPrefix.size() != 0) {
-        response->write_data("<a href='/upload" + urlPrefix.substr(0, urlPrefix.find_last_of('/')) + "' style='color:blue'>返回上一级</a><br/><br/>");
+
+    std::string html;
+    std::ifstream htmlFile{cur_path + "index.html"};
+    if (htmlFile.is_open()) {
+        std::stringstream buffer;
+        buffer << htmlFile.rdbuf();
+        html = buffer.str();
     }
+    if (html.empty()) {
+        response->sendError(500, "<h1>HTML 模板加载失败</h1>");
+        return {};
+    }
+
+    std::string urlPrefix = path.substr(path.find("res") + 3);
+    std::string backLink;
+    if (urlPrefix.size() != 0) {
+        backLink = "<a href='/upload" + urlPrefix.substr(0, urlPrefix.find_last_of('/')) + "' style='color:blue'>返回上一级</a><br/><br/>";
+    }
+
+    std::string fileList;
     DIR *dir = opendir(path.c_str());
     int id = 0;
     if (dir != nullptr) {
@@ -86,17 +104,18 @@ std::string Root::doGet(Request *request, Response *response, const std::string 
                 ++id;
                 std::string d_name = htmlEscape(d->d_name);
                 if (isFile(path + "/" + d->d_name)) {
-                    std::string s = "<div id=\"" + std::to_string(id)+ "\"><a download href=\"/upload" + (urlPrefix + d_name) + "\" style=\"color: black;font-weight: bold; margin-right: 10px\">" + d_name + "</a><input type=\"button\" onclick=\"del('" + std::to_string(id) + "')\" value=\"删除\"><br/><br/></div>";
-                    response->write_data(s);
+                    fileList += "<div id=\"" + std::to_string(id)+ "\"><a download href=\"/upload" + (urlPrefix + d_name) + "\" style=\"color: black;font-weight: bold; margin-right: 10px\">" + d_name + "</a><input type=\"button\" onclick=\"del('" + std::to_string(id) + "')\" value=\"删除\"><br/><br/></div>";
                 } else {
-                    std::string s = "<div id=\"" + std::to_string(id)+ "\"><a href=\"/upload" + (urlPrefix + d_name) + "\" style=\"color: blue; margin-right: 10px\">" + d_name + "</a><input type=\"button\" onclick=\"del('" + std::to_string(id) + "')\" value=\"删除\"><br/><br/></div>";
-                    response->write_data(s);
+                    fileList += "<div id=\"" + std::to_string(id)+ "\"><a href=\"/upload" + (urlPrefix + d_name) + "\" style=\"color: blue; margin-right: 10px\">" + d_name + "</a><input type=\"button\" onclick=\"del('" + std::to_string(id) + "')\" value=\"删除\"><br/><br/></div>";
                 }
             }
         }
         closedir(dir);
     }
-    response->write_data("</body></html>");
+
+    replaceAll(html, "{{BACK_LINK}}", backLink);
+    replaceAll(html, "{{FILE_LIST}}", fileList);
+    response->write_data(html);
     return {};
 }
 
@@ -396,3 +415,10 @@ std::string Root::makeContentDisposition(const std::string &filename) const {
     return header.str();
 }
 
+void Root::replaceAll(std::string &str, const std::string &before, const std::string &after) {
+    size_t pos = 0;
+    while ((pos = str.find(before, pos)) != std::string::npos) {
+        str.replace(pos, before.length(), after);
+        pos += after.length();
+    }
+}
