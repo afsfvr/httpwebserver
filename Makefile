@@ -23,8 +23,11 @@ endif
 
 DEBUG ?= 0
 ifeq ($(DEBUG), 1)
-	LDFLAGS += -g
-	CXXFLAGS += -g
+	LDFLAGS += -g -Wl,-O0
+	CXXFLAGS += -g -O0 -DDEBUG
+else
+	LDFLAGS += -Wl,-O2
+	CXXFLAGS += -O2 -DRELEASE -DNDEBUG
 endif
 
 .PHONY: all clean cleanAll $(SUBDIRS)
@@ -32,7 +35,7 @@ endif
 $(BIN): $(OBJ)
 	$(CXX) $(LDFLAGS) $^ -o $@ $(LDLIBS)
 
-authorize:
+authorize: $(BIN)
 	[ -x $(BIN) ] && sudo setcap 'cap_net_bind_service=+ep' $(BIN)
 
 all: $(BIN) $(SUBDIRS)

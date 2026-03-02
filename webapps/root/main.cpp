@@ -26,19 +26,6 @@ Root::Root() {}
 
 std::string Root::doGet(Request *request, Response *response, const std::string &cur_path) {
     std::string url = request->getUrl().substr(5); // /root
-    if (url == "/getip") {
-        response->write_data(request->getIp());
-        response->write_data("\r\n", 2);
-        return "";
-    }
-    if (url == "/getipport") {
-        response->write_data(request->getIp());
-        response->write_data(":", 1);
-        response->write_data(std::to_string(request->getPort()));
-        response->write_data("\r\n", 2);
-        return "";
-    }
-    return ".";
     if (url.length() == 0 || url.find_first_not_of('/') == std::string::npos) {
         return "resources/index.html";
     }
