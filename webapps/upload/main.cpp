@@ -31,7 +31,10 @@ private:
     std::string htmlEscape(const std::string &input) const;
     std::string urlEncode(const std::string &value) const;
     std::string makeContentDisposition(const std::string &filename) const;
-    void replaceAll(std::string &str, const std::string &before, const std::string &after);
+    void replaceAll(std::string &str, const std::string &before, const std::string &after) const;
+    int base64CharValue(char c) const;
+    std::string base64Decode(const char *input, size_t len) const;
+    bool mkdirp(const std::string &path, mode_t mode) const; // mkdir -p
 };
 
 extern "C" BaseClass* createClass() {
@@ -54,7 +57,7 @@ std::string Root::doGet(Request *request, Response *response, const std::string 
     std::string path = url.substr(7);
     if (path.size() == 0 || path.front() != '/') path.insert(path.begin(), '/');
     if (path.find_last_not_of('/') == std::string::npos) {
-        path = cur_path + "res";
+        path = cur_path + "resources";
         if (! fileExists(path)) {
             if (mkdir(path.c_str(), 0755) == -1) {
                 LOG_WARN("创建文件夹失败: %s", strerror(errno));
@@ -63,8 +66,9 @@ std::string Root::doGet(Request *request, Response *response, const std::string 
             }
         }
     } else {
-        path = cur_path + "res" + path;
+        path = cur_path + "resources" + path;
         if (! fileExists(path)) {
+            LOG_INFO("路径%s不存在", path.c_str());
             response->sendError(404, "<h1>文件不存在</h1>");
             return {};
         }
@@ -87,7 +91,7 @@ std::string Root::doGet(Request *request, Response *response, const std::string 
         return {};
     }
 
-    std::string urlPrefix = path.substr(path.find("res") + 3);
+    std::string urlPrefix = path.substr(path.find("resources") + 9);
     std::string backLink;
     if (urlPrefix.size() != 0) {
         backLink = "<a href='/upload" + urlPrefix.substr(0, urlPrefix.find_last_of('/')) + "' style='color:blue'>返回上一级</a><br/><br/>";
@@ -127,7 +131,7 @@ void Root::doPost(Request *request, Response *response, const std::string &cur_p
     }
     std::string path = url.substr(7);
     if (path.size() == 0 || path.front() != '/') path.insert(path.begin(), '/');
-    path = cur_path + "res" + path;
+    path = cur_path + "resources" + path;
 
     const std::string *type = request->getHeader("content-type");
     if (type == nullptr || type->find("multipart/form-data") == std::string::npos || type->find("boundary=") == std::string::npos) {
@@ -195,7 +199,7 @@ void Root::doDelete(Request *request, Response *response, const std::string &cur
     }
     std::string path = url.substr(7);
     if (path.size() == 0 || path.front() != '/') path.insert(path.begin(), '/');
-    path = cur_path + "res" + path;
+    path = cur_path + "resources" + path;
     if (! fileExists(path)) {
         response->sendError(404, "文件不存在");
         return;
@@ -224,7 +228,15 @@ Root::~Root() {
 bool Root::validate(Request *request) const {
     const std::string *authValue = request->getHeader("Authorization");
     if (authValue == nullptr) return false;
-    return true;
+    if (strncasecmp("basic ", authValue->c_str(), 6) != 0) return false;
+    std::string base64 = base64Decode(authValue->c_str() + 6, authValue->size() - 6);
+    LOG_INFO("base64=%s decode=%s", authValue->c_str() + 6, base64.c_str());
+    size_t index = base64.find(':');
+    if (index == std::string::npos) return false;
+    std::string username = base64.substr(0, index);
+    std::string password = base64.substr(index + 1);
+    if (username == "username" && password == "password") return true;
+    return false;
 }
 
 std::string Root::getfilename(const std::string& path, char *&buf, const std::string &boundary) const {
@@ -246,7 +258,7 @@ std::string Root::getfilename(const std::string& path, char *&buf, const std::st
     buf = buf + (data - buf + 4);
 
     if (! fileExists(path)) {
-        mkdir(path.c_str(), 0755);
+        mkdirp(path.c_str(), 0755);
     }
 
     std::string filename;
@@ -415,10 +427,82 @@ std::string Root::makeContentDisposition(const std::string &filename) const {
     return header.str();
 }
 
-void Root::replaceAll(std::string &str, const std::string &before, const std::string &after) {
+void Root::replaceAll(std::string &str, const std::string &before, const std::string &after) const {
     size_t pos = 0;
     while ((pos = str.find(before, pos)) != std::string::npos) {
         str.replace(pos, before.length(), after);
         pos += after.length();
     }
+}
+
+int Root::base64CharValue(char c) const {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    if (c == '=') return -2;
+    return -1;
+}
+
+std::string Root::base64Decode(const char *input, size_t len) const {
+    if (len % 4 != 0) return {};
+
+    size_t padding = 0;
+
+    if (len >= 1 && input[len - 1] == '=') padding++;
+    if (len >= 2 && input[len - 2] == '=') padding++;
+
+    size_t decodedLen = (len * 3) / 4 - padding;
+    std::string output(decodedLen, '\0'); // 预先分配内存
+
+    size_t index = 0;
+    for (size_t i = 0; i < len; i += 4) {
+        int val[4] = {0, 0, 0, 0};
+        for (int j = 0; j < 4 && i + j < len; j++) {
+            val[j] = base64CharValue(input[i + j]);
+            if (val[j] == -1) return {};
+            if (val[j] == -2) {
+                if (i + j + padding < len) return {};
+                val[j] = 0;
+            }
+        }
+
+        int n = (val[0] << 18) | (val[1] << 12) | (val[2] << 6) | val[3];
+
+        if (index < decodedLen) output[index++] = (n >> 16) & 0xFF;
+        if (index < decodedLen) output[index++] = (n >> 8) & 0xFF;
+        if (index < decodedLen) output[index++] = n & 0xFF;
+    }
+
+    return output;
+}
+
+bool Root::mkdirp(const std::string &path, mode_t mode) const {
+    if (path.empty()) return false;
+
+    for (size_t pos = 0; pos < path.length();) {
+        size_t index = path.find('/', pos);
+        std::string current;
+        if (index == std::string::npos) {
+            current = path;
+            pos = path.length();
+        } else {
+            current = path.substr(0, index);
+            pos = index + 1;
+        }
+
+        if (current.empty() || current.back() == '/') continue;
+
+        struct stat st;
+        if (stat(current.c_str(), &st) != 0) {
+            if (mkdir(current.c_str(), mode) != 0) {
+                if (errno != EEXIST) return false;
+            }
+        } else if (!S_ISDIR(st.st_mode)) {
+            return false;
+        }
+    }
+
+    return true;
 }

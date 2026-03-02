@@ -59,7 +59,7 @@ bool Redis::saveSession(uint64_t sessionId, int interval) {
 bool Redis::existsSession(uint64_t sessionId) {
     redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "TYPE session:%llu", sessionId));
     bool ret = false;
-    if (reply != nullptr && (reply->type == REDIS_REPLY_STATUS || reply->type == REDIS_REPLY_STRING) && strcasecmp("hash", reply->str) == 0) ret = true;
+    if (reply != nullptr && (reply->type == REDIS_REPLY_STATUS || reply->type == REDIS_REPLY_STRING) && strncasecmp("hash", reply->str, 3) == 0) ret = true;
     freeReplyObject(reply);
     return ret;
 }

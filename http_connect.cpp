@@ -174,13 +174,7 @@ void HttpConnect::read_data() {
 }
 
 static bool hostError(const std::string &host) {
-    static constexpr const char *hosts[] = { "localhost", "127.0.0.1" };
-    std::string lowerHost(host);
-    std::transform(lowerHost.begin(), lowerHost.end(), lowerHost.begin(), [](unsigned char c) { return std::tolower(c); });
-    for (const auto &h: hosts) {
-        if (lowerHost == h) return false;
-    }
-    return true;
+    return false;
 }
 
 void HttpConnect::parse() {
