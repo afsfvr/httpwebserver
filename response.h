@@ -35,13 +35,12 @@ public:
     std::map<std::string, std::string, case_insensitive_compare>& getHeaders();
     void write_data(const void *buf, const size_t size);
     void write_data(const std::string &str);
-    void write_data(const void *buf, const size_t size, int flags);
     void write_file(const std::string &filename);
     void flush();
     void setStatus(int status);
     int getStatus() const;
 private:
-    void write_len(const void *buf,size_t size, int flags) const;
+    void write_len(const void *buf, size_t size, int flags = 0) const;
     std::string decimalToHex(int num) const;
     std::string time_tToHttpDate(time_t timestamp) const;
     bool &m_write;

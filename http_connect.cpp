@@ -358,7 +358,7 @@ void HttpConnect::write_data() {
         if (data == nullptr) {
             data = response.m_buf;
         }
-        int len = send(m_sd, data + m_send_byte, m_have_byte, 0);
+        int len = send(m_sd, data + m_send_byte, m_have_byte, MSG_NOSIGNAL);
         if (len == 0) throw 3;
         if (len < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -376,7 +376,7 @@ void HttpConnect::write_data() {
 
 bool HttpConnect::write_head() {
     while (! m_send_head.empty()) {
-        int len = send(m_sd, m_send_head.c_str(), m_send_head.size(), 0);
+        int len = send(m_sd, m_send_head.c_str(), m_send_head.size(), MSG_NOSIGNAL);
         if (len == 0) throw 2;
         if (len < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -673,7 +673,7 @@ bool HttpConnect::run_dynamic_lib() {
                             const char *buf = "0\r\n\r\n";
                             int size = 5;
                             while (size > 0) {
-                                int len = send(m_sd, buf, size, 0);
+                                int len = send(m_sd, buf, size, MSG_NOSIGNAL);
                                 if (len > 0) {
                                     size -= len;
                                 } else if (len < 0) {

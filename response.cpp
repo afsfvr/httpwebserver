@@ -24,7 +24,7 @@ void Response::sendError(int num, const std::string &errmsg) {
     setContentLength(errmsg.size());
     m_size = 0;
     flush();
-    write_len(errmsg.data(), size, 0);
+    write_len(errmsg.data(), size);
 }
 
 void Response::sendRedirect(const std::string &url) {
@@ -100,10 +100,10 @@ void Response::write_data(const void *buf, const size_t size) {
         flush();
         if (m_chunk) {
             std::string s = decimalToHex(size).append("\r\n");
-            write_len(s.data(), s.size(), 0);
+            write_len(s.data(), s.size(), MSG_MORE);
         }
-        write_len(buf, size, 0);
-        if (m_chunk) write_len("\r\n", 2, 0);
+        write_len(buf, size, MSG_MORE);
+        if (m_chunk) write_len("\r\n", 2);
     } else {
         memcpy(m_buf + m_size, buf, size);
         m_size += size;
@@ -116,31 +116,21 @@ void Response::write_data(const std::string &str) {
         flush();
         if (m_chunk) {
             std::string s = decimalToHex(size).append("\r\n");
-            write_len(s.data(), s.size(), 0);
+            write_len(s.data(), s.size(), MSG_MORE);
         }
-        write_len(str.data(), size, 0);
-        if (m_chunk) write_len("\r\n", 2, 0);
+        write_len(str.data(), size, MSG_MORE);
+        if (m_chunk) write_len("\r\n", 2);
     } else {
         memcpy(m_buf + m_size, str.data(), size);
         m_size += size;
     }
 }
 
-void Response::write_data(const void *buf, const size_t size, int flags) {
-    if (size <= 0) return;
-    flush();
-    if (m_chunk) {
-        std::string s = decimalToHex(size).append("\r\n");
-        write_len(s.data(), s.size(), 0);
-    }
-    write_len(buf, size, flags);
-}
-
 void Response::write_len(const void *buf, size_t size, int flags) const {
     if (m_sd < 0) return;
     if (size <= 0) return;
     while (size > 0) {
-        int len = send(m_sd, buf, size, flags);
+        int len = send(m_sd, buf, size, flags | MSG_NOSIGNAL);
         if (len > 0) {
             size -= len;
         } else if (len < 0) {
@@ -160,11 +150,11 @@ void Response::write_file(const std::string &filename) {
             flush();
             if (m_chunk) {
                 std::string buf = decimalToHex(st.st_size).append("\r\n");
-                write_len(buf.data(), buf.size(), 0);
+                write_len(buf.data(), buf.size());
             }
             sendfile(m_sd, fd, 0, st.st_size);
             close(fd);
-            if (m_chunk) write_len("\r\n", 2, 0);
+            if (m_chunk) write_len("\r\n", 2);
         }
     }
 }
@@ -190,16 +180,20 @@ void Response::flush() {
         std::strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&timestamp));
         buf.append("Date: ").append(buff);
         buf.append("\r\n\r\n");
-        write_len(buf.data(), buf.size(), 0);
+        if (m_size > 0) {
+            write_len(buf.data(), buf.size());
+        } else {
+            write_len(buf.data(), buf.size(), MSG_MORE);
+        }
         m_write = true;
     }
     if (m_size > 0) {
         if (m_chunk) {
             std::string buf = decimalToHex(m_size).append("\r\n");
-            write_len(buf.data(), buf.size(), 0);
+            write_len(buf.data(), buf.size(), MSG_MORE);
         }
-        write_len(m_buf, m_size, 0);
-        if (m_chunk) write_len("\r\n", 2, 0);
+        write_len(m_buf, m_size, MSG_MORE);
+        if (m_chunk) write_len("\r\n", 2);
     }
     m_size = 0;
 }
