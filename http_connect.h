@@ -3,6 +3,9 @@
 
 #include <string>
 #include <map>
+#ifdef HTTPS
+#include <openssl/ssl.h>
+#endif
 
 #include "threadpool.h"
 #include "request.h"
@@ -14,7 +17,11 @@ class HttpConnect: public Task {
     constexpr static int MAX_BUFSIZE = 2048;
 
 public:
-    HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port);
+    HttpConnect(const int &epollfd, const int &pipe,
+#ifdef HTTPS
+            SSL *ssl,
+#endif
+            const int &sd, const std::string &ip, const int &port);
     HttpConnect(const HttpConnect&) = delete;
     HttpConnect& operator=(const HttpConnect&) = delete;
     ~HttpConnect();
@@ -73,6 +80,9 @@ private:
     bool m_keep_alive;
     Request request;
     Response response;
+#ifdef HTTPS
+    SSL *m_ssl;
+#endif
 };
 
 #endif

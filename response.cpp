@@ -1,4 +1,5 @@
 #include <map>
+#include <thread>
 #include <ctime>
 #include <cstring>
 #include <fcntl.h>
@@ -11,7 +12,15 @@
 
 extern std::string encoding;
 
-Response::Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers, std::set<Cookie> &cookies): m_write(w), m_chunk(chunk), m_status(status), m_size(size), m_sd(sd), m_keep_alive(keep_alive), m_headers(headers), m_cookies(cookies) {}
+Response::Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers, std::set<Cookie> &cookies
+#ifdef HTTPS
+        , SSL *ssl
+#endif
+        ): m_write(w), m_chunk(chunk), m_status(status), m_size(size), m_sd(sd), m_keep_alive(keep_alive), m_headers(headers), m_cookies(cookies) 
+#ifdef HTTPS
+           , m_ssl(ssl)
+#endif
+{}
 
 void Response::setContentLength(size_t len) {
     addHeader("Content-Length", std::to_string(len));
@@ -130,7 +139,21 @@ void Response::write_len(const void *buf, size_t size, int flags) const {
     if (m_sd < 0) return;
     if (size <= 0) return;
     while (size > 0) {
-        int len = send(m_sd, buf, size, flags | MSG_NOSIGNAL);
+#ifdef HTTPS
+        if (m_ssl == nullptr) return;
+        size_t len;
+        int ret = SSL_write_ex(m_ssl, buf, size, &len);
+        if (ret == 0) {
+            int err = SSL_get_error(m_ssl, ret);
+            if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+            throw 103;
+        }
+#else
+        ssize_t len = send(m_sd, buf, size, flags | MSG_NOSIGNAL);
+#endif
         if (len > 0) {
             size -= len;
         } else if (len < 0) {

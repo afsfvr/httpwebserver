@@ -9,6 +9,7 @@
 #include <cstring>
 #include <ctime>
 #include <algorithm>
+#include <thread>
 
 #include "base_class.h"
 #include "log.h"
@@ -38,11 +39,24 @@ enum class STATE {
  * 103 send err
  */
 
-#if defined (USE_REDIS)
-HttpConnect::HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port): epollfd(epollfd), m_pipe(pipe), m_sd(sd), m_ip(ip), m_port(port), request(res_session_id, m_sd, m_read_byte, m_buf, m_body_len, m_port, m_method, m_url, m_ip, headers, params), response(res_write, res_chunk, res_state, res_size, sd, m_keep_alive, res_headers, res_cookies) {
-#else
-HttpConnect::HttpConnect(const int &epollfd, const int &pipe, const int &sd, const std::string &ip, const int &port): epollfd(epollfd), m_pipe(pipe), m_sd(sd), m_ip(ip), m_port(port), request(m_sd, m_read_byte, m_buf, m_body_len, m_port, m_method, m_url, m_ip, headers, params), response(res_write, res_chunk, res_state, res_size, sd, m_keep_alive, res_headers, res_cookies) {
+HttpConnect::HttpConnect(const int &epollfd, const int &pipe, 
+#ifdef HTTPS
+        SSL *ssl,
 #endif
+        const int &sd, const std::string &ip, const int &port): epollfd(epollfd), m_pipe(pipe), m_sd(sd), m_ip(ip), m_port(port), request(
+#ifdef USE_REDIS
+        res_session_id,
+#endif
+#ifdef HTTPS
+        ssl,
+#endif
+        m_sd, m_read_byte, m_buf, m_body_len, m_port, m_method, m_url, m_ip, headers, params), response(res_write, res_chunk, res_state, res_size, sd, m_keep_alive, res_headers, res_cookies
+#ifdef HTTPS
+        , ssl) ,m_ssl(ssl)
+#else
+    )
+#endif
+{
     srand(time(nullptr));
     setnonblock(m_sd);
     m_file_data = nullptr;
@@ -55,6 +69,13 @@ HttpConnect::HttpConnect(const int &epollfd, const int &pipe, const int &sd, con
 }
 
 HttpConnect::~HttpConnect() {
+#ifdef HTTPS
+    if (m_ssl) {
+        int ret = SSL_shutdown(m_ssl);
+        if (ret == 0) SSL_shutdown(m_ssl);
+        SSL_free(m_ssl);
+    }
+#endif
     shutdown(m_sd, SHUT_RDWR);
     m_state = STATE::CLOSE;
     epoll_ctl(epollfd, EPOLL_CTL_DEL, m_sd, nullptr);
@@ -124,6 +145,9 @@ void HttpConnect::init() {
     res_size = 0;
     res_headers.clear();
     res_cookies.clear();
+    res_headers.emplace("Content-Encoding", "identity");
+    res_headers.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
+
     modfd(EPOLLIN);
 }
 
@@ -159,7 +183,20 @@ void HttpConnect::read_data() {
         return;
     }
     while (m_read_byte < MAX_BUFSIZE) {
-        int len = recv(m_sd, m_buf + m_read_byte, MAX_BUFSIZE - m_read_byte, 0);
+#ifdef HTTPS
+        size_t len;
+        int ret = SSL_read_ex(m_ssl, m_buf + m_read_byte, MAX_BUFSIZE - m_read_byte, &len);
+        if (ret == 0) {
+            int err = SSL_get_error(m_ssl, ret);
+            if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) break;
+            if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                LOG_ERROR("sd:%d,recv:%s", m_sd, strerror(errno));
+                throw 101;
+            }
+            break;
+        }
+#else
+        ssize_t len = recv(m_sd, m_buf + m_read_byte, MAX_BUFSIZE - m_read_byte, 0);
         if (len == 0) throw 1;
         if (len == -1) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -168,13 +205,10 @@ void HttpConnect::read_data() {
             }
             break;
         }
+#endif
         m_read_byte += len;
     }
     parse();
-}
-
-static bool hostError(const std::string &host) {
-    return false;
 }
 
 void HttpConnect::parse() {
@@ -201,14 +235,6 @@ void HttpConnect::parse() {
     memmove(m_buf, str, m_read_byte);
     memset(m_buf + m_read_byte, 0, MAX_BUFSIZE - m_read_byte);
     if (m_state == STATE::WRITE) {
-        auto iter = headers.find("host");
-        if (iter == headers.end() || hostError(iter->second)) {
-            uint32_t len = m_ip.length();
-            write(m_pipe, &len, sizeof(len));
-            write(m_pipe, m_ip.c_str(), len);
-            LOG_DEBUG("socket: %d, host error: %s", m_sd, (iter == headers.end() ? "null" : iter->second.c_str()));
-            throw 5;
-        }
         modfd(EPOLLOUT);
     } else {
         modfd(EPOLLIN);
@@ -216,7 +242,11 @@ void HttpConnect::parse() {
 }
 
 void HttpConnect::parse_line(char *data) {
+#ifdef USE_NGINX
+    LOG_INFO("socket:%d request:%s", m_sd, data);
+#else
     LOG_INFO("socket:%d request:%s, ip: %s, port: %d", m_sd, data, m_ip.c_str(), m_port);
+#endif
     char *url = strpbrk(data, " \t");
     if (url == nullptr) {
         m_state = STATE::WRITE;
@@ -279,6 +309,15 @@ void HttpConnect::parse_head(char *data) {
     *value++ = '\0';
     value += strspn(value, " ");
     headers.emplace(data, value);
+#ifdef USE_NGINX
+    if (strncasecmp("x-real-", data, 7) == 0) {
+        if (strncasecmp("ip", data + 7, 2) == 0) {
+            m_ip = value;
+        } else if (strncasecmp("port", data + 7, 4) == 0) {
+            m_port = atoi(value);
+        }
+    }
+#endif
 }
 
 void HttpConnect::parse_param(char *data) {
@@ -323,11 +362,14 @@ void HttpConnect::run() {
             write_data();
         }
     } catch (int i) {
+        LOG_DEBUG("抛出了异常: %d", i);
         m_state = STATE::CLOSE;
         HttpConnect *conn = this;
         static constexpr const uint32_t size = sizeof(HttpConnect*);
-        write(m_pipe, &size, sizeof(size));
-        write(m_pipe, &conn, sizeof(HttpConnect*));
+        int ret = write(m_pipe, &size, sizeof(size));
+        (void)ret;
+        ret = write(m_pipe, &conn, sizeof(HttpConnect*));
+        (void)ret;
     }
 }
 
@@ -358,7 +400,24 @@ void HttpConnect::write_data() {
         if (data == nullptr) {
             data = response.m_buf;
         }
-        int len = send(m_sd, data + m_send_byte, m_have_byte, MSG_NOSIGNAL);
+#ifdef HTTPS
+        size_t len;
+        int ret = SSL_write_ex(m_ssl, data + m_send_byte, m_have_byte, &len);
+        if (ret == 0) {
+            int err = SSL_get_error(m_ssl, ret);
+            if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+                modfd(EPOLLOUT);
+                return;
+            } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                LOG_ERROR("sd:%d,send:%s", m_sd, strerror(errno));
+                throw 103;
+            } else {
+                modfd(EPOLLOUT);
+                return;
+            }
+        }
+#else
+        ssize_t len = send(m_sd, data + m_send_byte, m_have_byte, MSG_NOSIGNAL);
         if (len == 0) throw 3;
         if (len < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -369,6 +428,7 @@ void HttpConnect::write_data() {
                 return;
             }
         }
+#endif
         m_send_byte += len;
         m_have_byte -= len;
     }
@@ -376,7 +436,23 @@ void HttpConnect::write_data() {
 
 bool HttpConnect::write_head() {
     while (! m_send_head.empty()) {
-        int len = send(m_sd, m_send_head.c_str(), m_send_head.size(), MSG_NOSIGNAL);
+#ifdef HTTPS
+        size_t len;
+        int ret = SSL_write_ex(m_ssl, m_send_head.c_str(), m_send_head.size(), &len);
+        if (ret == 0) {
+            int err = SSL_get_error(m_ssl, ret);
+            if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+                modfd(EPOLLOUT);
+            } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                LOG_ERROR("sd:%d,send head:%s", m_sd, strerror(errno));
+                throw 102;
+            } else {
+                modfd(EPOLLOUT);
+            }
+            return false;
+        }
+#else
+        ssize_t len = send(m_sd, m_send_head.c_str(), m_send_head.size(), MSG_NOSIGNAL);
         if (len == 0) throw 2;
         if (len < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -387,6 +463,7 @@ bool HttpConnect::write_head() {
             }
             return false;
         }
+#endif
         m_send_head.erase(0, len);
     }
     return true;
@@ -434,14 +511,14 @@ void HttpConnect::init_write_file(const std::string &filename) {
     }
     char timebuf[32] = {'\0'};
     std::strftime(timebuf, sizeof(timebuf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&st.st_mtim.tv_sec));
-    res_headers.emplace("Last-Modified", timebuf);
+    res_headers.insert_or_assign("Last-Modified", timebuf);
     auto iter = headers.find("If-Modified-Since");
     if (iter != headers.end() && iter->second == timebuf) {
-        setResponseState(304, nullptr);
+        setResponseState(304);
         return;
     }
     if (st.st_size == 0) {
-        res_headers.emplace("Content-Length", "0");
+        res_headers.insert_or_assign("Content-Length", "0");
         setResponseState(200);
         return;
     }
@@ -469,20 +546,20 @@ void HttpConnect::init_write_file(const std::string &filename) {
         if (index != std::string::npos) {
             auto citer = type.find(filename.substr(index + 1));
             if (citer != type.cend()) {
-                res_headers.emplace("Content-Type", citer->second);
+                res_headers.insert_or_assign("Content-Type", citer->second);
             } else {
-                res_headers.emplace("Content-Type", type.find("other")->second);
+                res_headers.insert_or_assign("Content-Type", type.find("other")->second);
             }
         } else {
-            res_headers.emplace("Content-Type", type.find("other")->second);
+            res_headers.insert_or_assign("Content-Type", type.find("other")->second);
         }
-        res_headers.emplace("Accept-Ranges", "bytes");
+        auto ret = res_headers.emplace("Accept-Ranges", "bytes");
         m_send_byte = 0;
         m_file_length = st.st_size;
         m_have_byte = st.st_size;
 
         auto iter = headers.find("range");
-        if (iter != headers.end()) {
+        if (ret.first->second == "bytes" && iter != headers.end()) {
             std::string str = iter->second;
             size_t index1 = str.find('='), index2 = str.find('-');
             size_t i1 = 0, i2 = m_file_length;
@@ -503,11 +580,11 @@ void HttpConnect::init_write_file(const std::string &filename) {
             if (i1 <= i2) {
                 std::string value = "bytes ";
                 value.append(std::to_string(i1)).append("-").append(std::to_string(i2)).append("/").append(std::to_string(m_file_length));
-                res_headers.emplace("Content-Range", value);
+                res_headers.insert_or_assign("Content-Range", value);
                 m_send_byte = i1;
                 m_have_byte = i2 - i1 + 1;
-                res_headers.emplace("Content-Length", std::to_string(m_have_byte));
-                setResponseState(206, nullptr);
+                res_headers.insert_or_assign("Content-Length", std::to_string(m_have_byte));
+                setResponseState(206);
             } else {
                 setResponseState(416, "<h1>416</h1>");
                 LOG_DEBUG("sd: %d, range请求的范围错误: %s", m_sd, str.c_str());
@@ -515,8 +592,8 @@ void HttpConnect::init_write_file(const std::string &filename) {
             }
         }
         if (response_state == 0) {
-            res_headers.emplace("Content-Length", std::to_string(m_have_byte));
-            setResponseState(200, nullptr);
+            res_headers.insert_or_assign("Content-Length", std::to_string(m_have_byte));
+            setResponseState(200);
         }
     }
 }
@@ -584,19 +661,14 @@ void HttpConnect::setResponseState(int s, const char *str) {
         m_keep_alive = true;
         res_headers.emplace("Connection", "keep-alive");
     }
-    if (res_headers.find("content-encoding") == res_headers.end()) {
-        res_headers.emplace("Content-Encoding", "identity");
-    }
-    char buf[128] = {'\0'};
+    char buf[64] = {'\0'};
     time_t timestamp = time(nullptr);
     std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&timestamp));
     res_headers.emplace("Date", buf);
     response_state = s;
     m_send_head = "HTTP/1.1 ";
     m_send_head.append(std::to_string(s)).append("\r\n");
-    if (str != nullptr) {
-        res_headers.erase("content-length");
-    }
+    if (str != nullptr) res_headers.erase("content-length");
     for (auto it = res_headers.cbegin(); it != res_headers.cend(); it++) {
         m_send_head.append(it->first).append(":").append(it->second).append("\r\n");
     }
@@ -663,8 +735,7 @@ bool HttpConnect::run_dynamic_lib() {
                     }
                     if (! res_write) {
                         m_have_byte = res_size;
-                        res_headers.emplace("Content-Length", std::to_string(res_size));
-                        res_headers.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
+                        res_headers.insert_or_assign("Content-Length", std::to_string(res_size));
                         setResponseState(res_state);
                     } else {
                         LOG_INFO("socket:%d response status:%d", m_sd, res_state);
@@ -673,7 +744,20 @@ bool HttpConnect::run_dynamic_lib() {
                             const char *buf = "0\r\n\r\n";
                             int size = 5;
                             while (size > 0) {
-                                int len = send(m_sd, buf, size, MSG_NOSIGNAL);
+#ifdef HTTPS
+                                size_t len;
+                                int ret = SSL_write_ex(m_ssl, buf, size, &len);
+                                if (ret == 0) {
+                                    int err = SSL_get_error(m_ssl, ret);
+                                    if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+                                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                                        continue;
+                                    }
+                                    throw 103;
+                                }
+                                size -= len;
+#else
+                                ssize_t len = send(m_sd, buf, size, MSG_NOSIGNAL);
                                 if (len > 0) {
                                     size -= len;
                                 } else if (len < 0) {
@@ -681,6 +765,7 @@ bool HttpConnect::run_dynamic_lib() {
                                 } else {
                                     throw 3;
                                 }
+#endif
                             }
                         }
                     }

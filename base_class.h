@@ -35,7 +35,11 @@ void BaseClass::doHead(Request *request, Response *response, const std::string &
     std::map<std::string, std::string, case_insensitive_compare> res_headers(response->getHeaders());
     std::set<Cookie> res_cookies;
     int fd = open("/dev/null", O_RDWR);
-    Response resp(res_write, res_chunk, res_state, res_size, fd, keep_alive, res_headers, res_cookies);
+    Response resp(res_write, res_chunk, res_state, res_size, fd, keep_alive, res_headers, res_cookies
+#ifdef HTTPS
+            , nullptr
+#endif
+            );
     std::string filename = this->doGet(request, &resp, cur_path);
     if ( ! res_write) {
         if (filename.length() == 0) {

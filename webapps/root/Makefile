@@ -1,7 +1,7 @@
 CC = g++
 CXX = g++
-LDFLAGS += -shared
-CXXFLAGS += -fPIC -MMD
+LDFLAGS += -shared -Wall -std=c++17
+CXXFLAGS += -fPIC -MMD -std=c++17
 BIN = main.so
 SRC = $(wildcard *.cpp)
 OBJ = $(SRC:.cpp=.o)
@@ -9,24 +9,36 @@ DEP = $(OBJ:.o=.d)
 
 LOG ?= 1
 ifeq ($(LOG), 0)
-	LDFLAGS += -DNO_LOG
 	CXXFLAGS += -DNO_LOG
 endif
 
 REDIS ?= 0
 ifeq ($(REDIS), 1)
-	LDFLAGS += -DUSE_REDIS
-	CXXFLAGS += -DUSE_REDIS
 	LDFLAGS += -lhiredis
+	CXXFLAGS += -DUSE_REDIS
+endif
+
+HTTPS ?= 0
+ifeq ($(HTTPS), 1)
+	LDLIBS += -lssl -lcrypto
+	CXXFLAGS += -DHTTPS
+endif
+
+NGINX ?= 0
+ifeq ($(NGINX), 1)
+	CXXFLAGS += -DUSE_NGINX
 endif
 
 DEBUG ?= 0
 ifeq ($(DEBUG), 1)
-	LDFLAGS += -g
-	CXXFLAGS += -g
+	LDFLAGS += -g -Wl,-O0
+	CXXFLAGS += -g -O0 -DDEBUG
+else
+	LDFLAGS += -Wl,-O2
+	CXXFLAGS += -O2 -DRELEASE -DNDEBUG
 endif
 
-SOURCES:=$(wildcard *.cpp)
+.PHONE: clean
 
 $(BIN): $(OBJ)
 	$(CXX) $^ -o $@ $(LDFLAGS)

@@ -1,16 +1,29 @@
 #include <cstring>
+#include <thread>
 #include <sys/socket.h>
 
 #include "request.h"
 
-#if defined (USE_REDIS)
-Request::Request(uint64_t &sessionId, int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params): m_session_id(sessionId), m_fd(fd), m_read_byte(read_byte), m_buf(buf), m_body_length(body_len), m_port(port), m_method(method), m_url(url), m_ip(ip), m_headers(headers), m_params(params) {}
+Request::Request(
+#ifdef USE_REDIS
+        uint64_t &sessionId,
+#endif
+#ifdef HTTPS
+        SSL *ssl,
+#endif
+        int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params):
+#ifdef USE_REDIS
+    m_session_id(sessionId),
+#endif
+#ifdef HTTPS
+    m_ssl(ssl),
+#endif
+    m_fd(fd), m_read_byte(read_byte), m_buf(buf), m_body_length(body_len), m_port(port), m_method(method), m_url(url), m_ip(ip), m_headers(headers), m_params(params) {}
 
+#ifdef USE_REDIS
 Session Request::getSession() const {
     return m_session_id;
 }
-#else
-Request::Request(int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params): m_fd(fd), m_read_byte(read_byte), m_buf(buf), m_body_length(body_len), m_port(port), m_method(method), m_url(url), m_ip(ip), m_headers(headers), m_params(params) {}
 #endif
 
 const int& Request::getPort() const {
@@ -76,7 +89,20 @@ size_t Request::read_body(char *dest, size_t len) {
     }
     size_t min = std::min(len, m_body_length);
     while (min > 0) {
-        size_t tmp = recv(m_fd, dest + size, min, 0);
+#ifdef HTTPS
+        size_t tmp;
+        int ret = SSL_read_ex(m_ssl, dest + size, min, &tmp);
+        if (ret == 0) {
+            int err = SSL_get_error(m_ssl, ret);
+            if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+            throw 2;
+        }
+#else
+        ssize_t tmp = recv(m_fd, dest + size, min, 0);
+#endif
         if (tmp == 0) throw 1;
         if (tmp < 0) throw 2;
         size += tmp;

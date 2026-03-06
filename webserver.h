@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <functional>
 #include <vector>
+#include <openssl/ssl.h>
 
 #include "threadpool.h"
 #include "http_connect.h"
@@ -41,6 +42,9 @@ private:
     ThreadPool m_pool;
     bool m_run;
     const std::function<void()> m_add_connect;
+#ifdef HTTPS
+    SSL_CTX *m_ctx;
+#endif
 };
 
 #endif

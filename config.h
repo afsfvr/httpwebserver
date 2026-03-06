@@ -38,6 +38,10 @@ public:
     const std::map<std::string, std::string, case_insensitive_compare>& getType() const;
     bool allowIpv4() const;
     bool allowIpv6() const;
+#ifdef HTTPS
+    const std::string& getCertPath() const;
+    const std::string& getKeyPath() const;
+#endif
 private:
     Config();
     int m_port;
@@ -58,6 +62,10 @@ private:
     std::map<std::string, std::string, case_insensitive_compare> m_type;
     bool m_ipv4;
     bool m_ipv6;
+#ifdef HTTPS
+    std::string m_cert;
+    std::string m_key;
+#endif
 };
 
 #endif
