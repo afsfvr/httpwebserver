@@ -7,6 +7,9 @@
 #ifdef USE_REDIS
 #include "session.h"
 #endif
+#ifdef HTTPS
+#include <openssl/ssl.h>
+#endif
 
 #ifndef CASE_INSENSITIVE_COMPARE_STRUCT
 #define CASE_INSENSITIVE_COMPARE_STRUCT
@@ -19,11 +22,16 @@ struct case_insensitive_compare {
 
 class Request {
 public:
-#if defined (USE_REDIS)
-    Request(uint64_t &sessionId, int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params);
+    Request(
+#ifdef USE_REDIS
+            uint64_t &sessionId,
+#endif
+#ifdef HTTPS
+            SSL *ssl,
+#endif
+            int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params);
+#ifdef USE_REDIS
     Session getSession() const;
-#else
-    Request(int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params);
 #endif
     Request(const Request&) = delete;
     Request& operator=(const Request&) = delete;
@@ -39,6 +47,9 @@ public:
 private:
 #ifdef USE_REDIS
     uint64_t &m_session_id;
+#endif
+#ifdef HTTPS
+    SSL *m_ssl;
 #endif
     int m_fd;
     int &m_read_byte;

@@ -6,9 +6,9 @@ OBJ = $(SRC:.cpp=.o)
 DEP = $(OBJ:.o=.d)
 SUBDIRS := root upload
 
-LDFLAGS += -Wall -pthread -rdynamic
+LDFLAGS += -Wall -pthread -rdynamic -std=c++17
 LDLIBS += -ldl
-CXXFLAGS += -Wall -MMD
+CXXFLAGS += -Wall -MMD -std=c++17
 
 LOG ?= 1
 ifeq ($(LOG), 0)
@@ -19,6 +19,17 @@ REDIS ?= 0
 ifeq ($(REDIS), 1)
 	LDLIBS += -lhiredis
 	CXXFLAGS += -DUSE_REDIS
+endif
+
+HTTPS ?= 0
+ifeq ($(HTTPS), 1)
+	LDLIBS += -lssl -lcrypto
+	CXXFLAGS += -DHTTPS
+endif
+
+NGINX ?= 0
+ifeq ($(NGINX), 1)
+	CXXFLAGS += -DUSE_NGINX
 endif
 
 DEBUG ?= 0

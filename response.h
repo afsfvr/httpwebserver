@@ -4,6 +4,9 @@
 #include <set>
 #include <map>
 #include <string>
+#ifdef HTTPS
+#include <openssl/ssl.h>
+#endif
 
 #include "cookie.h"
 
@@ -21,7 +24,11 @@ class Response {
     constexpr static int MAX_BUFSIZE = 2048;
 
 public:
-    Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers, std::set<Cookie> &cookies);
+    Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers, std::set<Cookie> &cookies
+#ifdef HTTPS
+            ,SSL *ssl
+#endif
+            );
     Response(const Response&) = delete;
     Response& operator=(const Response&) = delete;
     void setContentLength(size_t len);
@@ -52,6 +59,9 @@ private:
     bool &m_keep_alive;
     std::map<std::string, std::string, case_insensitive_compare> &m_headers;
     std::set<Cookie> &m_cookies;
+#ifdef HTTPS
+    SSL *m_ssl;
+#endif
 };
 
 #endif

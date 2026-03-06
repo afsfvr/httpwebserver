@@ -1,6 +1,7 @@
 #include <iostream>
 #include <getopt.h>
 #include <unistd.h>
+#include <cstring>
 
 #include "config.h"
 
@@ -34,6 +35,10 @@ void Config::parse(int argc, char *argv[]) {
         throw std::invalid_argument(std::string("参数非法:nullptr"));
     }
     struct option argarr[] = {
+#ifdef HTTPS
+        {"ssl-cert", 1, nullptr, 0},
+        {"ssl-key", 1, nullptr, 0},
+#endif
         {"ipv4", 0, nullptr, '4'},
         {"ipv6", 0, nullptr, '6'},
         {"port", 1, nullptr, 'p'},
@@ -56,6 +61,15 @@ void Config::parse(int argc, char *argv[]) {
     int index = 0, c = -1;
     while ((c = getopt_long(argc, argv, "46p:t:W:d:l:aw:r:i:P:u:S:m:M:c:h", argarr, &index)) >= 0) {
         switch(c) {
+#ifdef HTTPS
+        case 0:
+            if (strncmp(argarr[index].name, "ssl-cert", 8) == 0) {
+                m_cert = optarg;
+            } else if (strncmp(argarr[index].name, "ssl-key", 7) == 0) {
+                m_key = optarg;
+            }
+            break;
+#endif
         case '4':
             this->m_ipv4 = true;
             break;
@@ -108,6 +122,10 @@ void Config::parse(int argc, char *argv[]) {
             this->m_redis_max_count = atoi(optarg);
             break;
         case 'h':
+#ifdef HTTPS
+            std::cout << "\t--ssl-cert\t\tssl证书位置" << std::endl;
+            std::cout << "\t--ssl-key\t\tssl私钥位置" << std::endl;
+#endif
             std::cout << "-4\t--ipv4\t\t允许ipv4访问(默认同时允许ipv4和ipv6)" << std::endl;
             std::cout << "-6\t--ipv6\t\t允许ipv6访问(默认同时允许ipv4和ipv6)" << std::endl;
             std::cout << "-p\t--port\t\t监听端口，默认8888" << std::endl;
@@ -242,3 +260,12 @@ bool Config::allowIpv4() const {
 bool Config::allowIpv6() const {
     return m_ipv6;
 }
+
+#ifdef HTTPS
+const std::string& Config::getCertPath() const {
+    return m_cert;
+}
+const std::string& Config::getKeyPath() const {
+    return m_key;
+}
+#endif

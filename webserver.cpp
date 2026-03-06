@@ -7,6 +7,8 @@
 #include <fstream>
 #include <cstring>
 #include <string>
+#include <openssl/err.h>
+#include <openssl/crypto.h>
 
 #include "http_connect.h"
 #include "config.h"
@@ -21,7 +23,44 @@ WebServer::WebServer():
         ? (Config::getInstance()->allowIpv4()
                 ? std::bind(&WebServer::add_connect_v4_v6, this)
                 : std::bind(&WebServer::add_connect_v6, this))
-                : std::bind(&WebServer::add_connect_v4, this)} {
+                : std::bind(&WebServer::add_connect_v4, this)}
+#ifdef HTTPS
+    , m_ctx{nullptr} {
+    OPENSSL_init_ssl(0, nullptr);
+
+    m_ctx = SSL_CTX_new(TLS_server_method());
+    if (!m_ctx) {
+        int err = ERR_get_error();
+        if (err) LOG_ERROR("SSL_CTX对象创建失败: %s", ERR_error_string(err, nullptr));
+        exit(1);
+    }
+
+    SSL_CTX_set_min_proto_version(m_ctx, TLS1_2_VERSION);
+    SSL_CTX_set_cipher_list(m_ctx, "HIGH:!aNULL:!MD5");
+
+    /* if (SSL_CTX_use_certificate_file(m_ctx, Config::getInstance()->getCertPath().c_str(), SSL_FILETYPE_PEM) <= 0) { // 加载服务器证书 */
+    if (SSL_CTX_use_certificate_chain_file(m_ctx, Config::getInstance()->getCertPath().c_str()) <= 0) { // 加载服务器证书和证书链
+        int err = ERR_get_error();
+        if (err) LOG_ERROR("服务器证书错误: %s %s", Config::getInstance()->getCertPath().c_str(), ERR_error_string(err, nullptr));
+        ERR_print_errors_fp(stderr);
+        exit(1);
+    }
+
+    if (SSL_CTX_use_PrivateKey_file(m_ctx, Config::getInstance()->getKeyPath().c_str(), SSL_FILETYPE_PEM) <= 0 ) {
+        int err = ERR_get_error();
+        if (err) LOG_ERROR("服务器证书私钥错误: %s %s", Config::getInstance()->getKeyPath().c_str(), ERR_error_string(err, nullptr));
+        ERR_print_errors_fp(stderr);
+        exit(1);
+    }
+
+    if (!SSL_CTX_check_private_key(m_ctx)) {
+        LOG_ERROR("证书和私钥不匹配");
+        ERR_print_errors_fp(stderr);
+        exit(1);
+    }
+#else
+    {
+#endif
     if (getrlimit(RLIMIT_OFILE, &m_limit) < 0) {
         LOG_ERROR("getrlimit:%s", strerror(errno));
         exit(1);
@@ -123,6 +162,9 @@ WebServer::~WebServer() {
     close(m_pipe[1]);
     close(m_epollfd);
     setrlimit(RLIMIT_OFILE, &m_limit);
+#ifdef HTTPS
+    if (m_ctx) SSL_CTX_free(m_ctx);
+#endif
 }
 
 void WebServer::eventLoop() {
@@ -175,7 +217,21 @@ void WebServer::add_connect_v4() {
         close(sd);
         return;
     }
+#ifdef HTTPS
+    SSL *ssl = SSL_new(m_ctx);
+    SSL_set_fd(ssl, sd);
+    if (SSL_accept(ssl) <= 0) {
+        int err = ERR_get_error();
+        if (err) LOG_WARN("ssl握手失败: %s", ERR_error_string(err, nullptr));
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        close(sd);
+    } else {
+        new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, ntohs(address.sin_port));
+    }
+#else
     new HttpConnect(m_epollfd, m_pipe[1], sd, ip, ntohs(address.sin_port));
+#endif
 }
 
 void WebServer::add_connect_v6() {
@@ -194,7 +250,21 @@ void WebServer::add_connect_v6() {
         close(sd);
         return;
     }
+#ifdef HTTPS
+    SSL *ssl = SSL_new(m_ctx);
+    SSL_set_fd(ssl, sd);
+    if (SSL_accept(ssl) <= 0) {
+        int err = ERR_get_error();
+        if (err) LOG_WARN("ssl握手失败: %s", ERR_error_string(err, nullptr));
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        close(sd);
+    } else {
+        new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, ntohs(address.sin6_port));
+    }
+#else
     new HttpConnect(m_epollfd, m_pipe[1], sd, ip, ntohs(address.sin6_port));
+#endif
 }
 
 void WebServer::add_connect_v4_v6() {
@@ -219,13 +289,28 @@ void WebServer::add_connect_v4_v6() {
         close(sd);
         return;
     }
+#ifdef HTTPS
+    SSL *ssl = SSL_new(m_ctx);
+    SSL_set_fd(ssl, sd);
+    if (SSL_accept(ssl) <= 0) {
+        int err = ERR_get_error();
+        if (err) LOG_WARN("ssl握手失败: %s", ERR_error_string(err, nullptr));
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        close(sd);
+    } else {
+        new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, ntohs(address.sin6_port));
+    }
+#else
     new HttpConnect(m_epollfd, m_pipe[1], sd, ip, ntohs(address.sin6_port));
+#endif
 }
 
 void WebServer::stop() {
     m_run = false;
     int i = -1;
-    write(m_pipe[1], &i, 4);
+    int ret = write(m_pipe[1], &i, 4);
+    (void)ret;
 }
 
 void WebServer::handlePipeEvent() {
