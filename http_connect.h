@@ -48,6 +48,9 @@ private:
     void setResponseState(int s, const char *err = nullptr);
     bool run_dynamic_lib();
     bool isFile(const std::string &filename) const;
+#ifdef HTTPS
+    void handshake();
+#endif
 #ifdef USE_REDIS
     uint64_t res_session_id;
 #endif
@@ -82,6 +85,7 @@ private:
     Response response;
 #ifdef HTTPS
     SSL *m_ssl;
+    bool m_handshake;
 #endif
 };
 

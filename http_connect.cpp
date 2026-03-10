@@ -60,12 +60,12 @@ HttpConnect::HttpConnect(const int &epollfd, const int &pipe,
     srand(time(nullptr));
     setnonblock(m_sd);
     m_file_data = nullptr;
+    m_keep_alive = true;
+    init();
     struct epoll_event ev;
     ev.data.ptr = this;
     ev.events = EPOLLIN | EPOLLRDHUP | EPOLLET | EPOLLONESHOT;
     epoll_ctl(epollfd, EPOLL_CTL_ADD, m_sd, &ev);
-    m_keep_alive = true;
-    init();
 }
 
 HttpConnect::~HttpConnect() {
@@ -147,8 +147,6 @@ void HttpConnect::init() {
     res_cookies.clear();
     res_headers.emplace("Content-Encoding", "identity");
     res_headers.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
-
-    modfd(EPOLLIN);
 }
 
 int HttpConnect::setblock(const int &fd) {
@@ -356,6 +354,12 @@ bool HttpConnect::operator==(const Task *task) {
 
 void HttpConnect::run() {
     try {
+#ifdef HTTPS
+        if (! m_handshake) {
+            handshake();
+            return;
+        }
+#endif
         if (m_state == STATE::READ) {
             read_data();
         } else if (m_state == STATE::WRITE) {
@@ -394,6 +398,7 @@ void HttpConnect::write_data() {
     while (true) {
         if (m_have_byte == 0) {
             init();
+            modfd(EPOLLIN);
             return;
         }
         const char *data = m_file_data;
@@ -786,3 +791,31 @@ bool HttpConnect::isFile(const std::string &filename) const {
     struct stat st;
     return stat(filename.c_str(), &st) == 0 && S_ISREG(st.st_mode);
 }
+
+#ifdef HTTPS
+void HttpConnect::handshake() {
+    if (m_handshake) return;
+    int ret = SSL_accept(m_ssl);
+    if (ret == 1) {
+        modfd(EPOLLIN);
+        m_handshake = true;
+        return;
+    }
+    int err = SSL_get_error(m_ssl, ret);
+
+    if (err == SSL_ERROR_WANT_READ) {
+        modfd(EPOLLIN);
+    } else if (err == SSL_ERROR_WANT_WRITE) {
+        modfd(EPOLLOUT);
+    } else {
+        HttpConnect *conn = this;
+        static constexpr const uint32_t size = sizeof(HttpConnect*);
+        int ret = write(m_pipe, &size, sizeof(size));
+        (void)ret;
+        ret = write(m_pipe, &conn, sizeof(HttpConnect*));
+        (void)ret;
+        return;
+    }
+    return;
+}
+#endif
