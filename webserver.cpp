@@ -220,15 +220,7 @@ void WebServer::add_connect_v4() {
 #ifdef HTTPS
     SSL *ssl = SSL_new(m_ctx);
     SSL_set_fd(ssl, sd);
-    if (SSL_accept(ssl) <= 0) {
-        int err = ERR_get_error();
-        if (err) LOG_WARN("ssl握手失败: %s", ERR_error_string(err, nullptr));
-        SSL_shutdown(ssl);
-        SSL_free(ssl);
-        close(sd);
-    } else {
-        new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, ntohs(address.sin_port));
-    }
+    new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, ntohs(address.sin_port));
 #else
     new HttpConnect(m_epollfd, m_pipe[1], sd, ip, ntohs(address.sin_port));
 #endif
@@ -253,15 +245,7 @@ void WebServer::add_connect_v6() {
 #ifdef HTTPS
     SSL *ssl = SSL_new(m_ctx);
     SSL_set_fd(ssl, sd);
-    if (SSL_accept(ssl) <= 0) {
-        int err = ERR_get_error();
-        if (err) LOG_WARN("ssl握手失败: %s", ERR_error_string(err, nullptr));
-        SSL_shutdown(ssl);
-        SSL_free(ssl);
-        close(sd);
-    } else {
-        new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, ntohs(address.sin6_port));
-    }
+    new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, ntohs(address.sin6_port));
 #else
     new HttpConnect(m_epollfd, m_pipe[1], sd, ip, ntohs(address.sin6_port));
 #endif
@@ -292,15 +276,7 @@ void WebServer::add_connect_v4_v6() {
 #ifdef HTTPS
     SSL *ssl = SSL_new(m_ctx);
     SSL_set_fd(ssl, sd);
-    if (SSL_accept(ssl) <= 0) {
-        int err = ERR_get_error();
-        if (err) LOG_WARN("ssl握手失败: %s", ERR_error_string(err, nullptr));
-        SSL_shutdown(ssl);
-        SSL_free(ssl);
-        close(sd);
-    } else {
-        new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, ntohs(address.sin6_port));
-    }
+    new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, ntohs(address.sin6_port));
 #else
     new HttpConnect(m_epollfd, m_pipe[1], sd, ip, ntohs(address.sin6_port));
 #endif
