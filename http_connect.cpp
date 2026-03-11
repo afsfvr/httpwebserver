@@ -62,6 +62,9 @@ HttpConnect::HttpConnect(const int &epollfd, const int &pipe,
     m_file_data = nullptr;
     m_keep_alive = true;
     init();
+#ifdef HTTPS
+    m_handshake = false;
+#endif
     struct epoll_event ev;
     ev.data.ptr = this;
     ev.events = EPOLLIN | EPOLLRDHUP | EPOLLET | EPOLLONESHOT;
@@ -188,7 +191,7 @@ void HttpConnect::read_data() {
             int err = SSL_get_error(m_ssl, ret);
             if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) break;
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                LOG_ERROR("sd:%d,recv:%s", m_sd, strerror(errno));
+                LOG_ERROR("sd:%d, ssl: %d, recv error: %s", m_sd, err, strerror(errno));
                 throw 101;
             }
             break;
@@ -278,15 +281,14 @@ void HttpConnect::parse_line(char *data) {
         m_url = Config::getInstance()->getRootUrl();
     } else {
         size_t index2 = m_url.find_first_of('/', index);
-        struct stat st;
         std::string path = Config::getInstance()->getWebappsPath();
         if (index2 == std::string::npos) {
             path.append(m_url.substr(index));
         } else {
             path.append(m_url.substr(index, (index2 - index)));
         }
-        path.append("/main.so");
-        if (stat(path.c_str(), &st) == -1) {
+        path.append("/libmain.so");
+        if (access(path.c_str(), F_OK) == -1) {
             m_url.erase(0, 1);
             m_url.insert(0, Config::getInstance()->getRootUrl());
         }
@@ -496,7 +498,7 @@ void HttpConnect::init_write_lib() {
     }
     Config *config = Config::getInstance();
     m_dynamic_lib_file = config->getWebappsPath();
-    m_dynamic_lib_file.append(m_url.substr(i1, i2 - i1)).append("/main.so");
+    m_dynamic_lib_file.append(m_url.substr(i1, i2 - i1)).append("/libmain.so");
     if (! isFile(m_dynamic_lib_file)) {
         LOG_DEBUG("动态库路径错误:%s", m_dynamic_lib_file.c_str());
         m_dynamic_lib_file.clear();
@@ -798,6 +800,7 @@ void HttpConnect::handshake() {
     int ret = SSL_accept(m_ssl);
     if (ret == 1) {
         modfd(EPOLLIN);
+        LOG_DEBUG("socket: %d tls握手完成", m_sd);
         m_handshake = true;
         return;
     }

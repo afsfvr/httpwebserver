@@ -1,8 +1,8 @@
 CC = g++
 CXX = g++
-LDFLAGS += -shared -Wall -std=c++17
-CXXFLAGS += -fPIC -MMD -std=c++17
-BIN = main.so
+LDFLAGS += -shared -std=c++17
+CXXFLAGS += -fPIC -Wall -MMD -std=c++17
+BIN = libmain.so
 SRC = $(wildcard *.cpp)
 OBJ = $(SRC:.cpp=.o)
 DEP = $(OBJ:.o=.d)
