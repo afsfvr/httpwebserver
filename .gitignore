@@ -2,3 +2,5 @@
 *.d
 main.so
 /main
+/build/
+/webapps/upload/resources/
