@@ -58,6 +58,8 @@ WebServer::WebServer():
         ERR_print_errors_fp(stderr);
         exit(1);
     }
+
+    SSL_CTX_set_alpn_select_cb(m_ctx, &WebServer::alpnSelectCb, nullptr);
 #else
     {
 #endif
@@ -396,3 +398,17 @@ std::string WebServer::trim(const std::string &str) {
     size_t end = str.find_last_not_of(" \t\r\n");
     return str.substr(start, end - start + 1);
 }
+
+#ifdef HTTPS
+int WebServer::alpnSelectCb(SSL *ssl, const unsigned char **out, unsigned char *outlen,
+        const unsigned char *in, unsigned int inlen, void *arg) {
+
+    static const unsigned char proto[] = { 8, 'h','t','t','p','/','1','.','1' };
+    constexpr const int len = sizeof(proto);
+    int ret =SSL_select_next_proto((unsigned char**)out, outlen, proto, len, in, inlen);
+    if (ret == OPENSSL_NPN_NEGOTIATED) {
+        return SSL_TLSEXT_ERR_OK;
+    }
+    return SSL_TLSEXT_ERR_ALERT_FATAL;
+}
+#endif
