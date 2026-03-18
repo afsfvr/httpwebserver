@@ -31,6 +31,10 @@ private:
     void saveBlackList();
     bool inBlackList(const std::string &ip);
     std::string trim(const std::string &str);
+#ifdef HTTPS
+    static int alpnSelectCb(SSL *ssl, const unsigned char **out, unsigned char *outlen,
+                   const unsigned char *in, unsigned int inlen, void *arg);
+#endif
 
     std::unordered_set<std::string> m_blackList;
     const std::string m_blackListFile = "black.txt";
