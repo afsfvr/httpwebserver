@@ -1,6 +1,6 @@
 *.o
 *.d
-main.so
+libmain.so
 /main
 /build/
 /webapps/upload/resources/

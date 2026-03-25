@@ -150,6 +150,9 @@ void HttpConnect::init() {
     res_cookies.clear();
     res_headers.emplace("Content-Encoding", "identity");
     res_headers.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
+#ifdef HTTPS
+    res_headers.emplace("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+#endif
 }
 
 int HttpConnect::setblock(const int &fd) {
@@ -190,6 +193,7 @@ void HttpConnect::read_data() {
         if (ret == 0) {
             int err = SSL_get_error(m_ssl, ret);
             if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) break;
+            if (err == SSL_ERROR_ZERO_RETURN) throw 101;
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
                 LOG_ERROR("sd:%d, ssl: %d, recv error: %s", m_sd, err, strerror(errno));
                 throw 101;
@@ -416,7 +420,7 @@ void HttpConnect::write_data() {
                 modfd(EPOLLOUT);
                 return;
             } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                LOG_ERROR("sd:%d,send:%s", m_sd, strerror(errno));
+                LOG_ERROR("sd:%d, ssl: %d send: %s", m_sd, err, strerror(errno));
                 throw 103;
             } else {
                 modfd(EPOLLOUT);
@@ -451,7 +455,7 @@ bool HttpConnect::write_head() {
             if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
                 modfd(EPOLLOUT);
             } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                LOG_ERROR("sd:%d,send head:%s", m_sd, strerror(errno));
+                LOG_ERROR("sd:%d, ssl: %d, send head: %s", m_sd, err, strerror(errno));
                 throw 102;
             } else {
                 modfd(EPOLLOUT);
