@@ -56,9 +56,9 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 
 target_compile_options(${PROJECT_NAME} PRIVATE
     -Wall
-    $<$<CONFIG:Debug>:-g -O0>
+    $<$<CONFIG:Debug>:-g -ggdb -O0>
     $<$<CONFIG:Release>:-O2>
-    $<$<CONFIG:RelWithDebInfo>:-O2 -g>
+    $<$<CONFIG:RelWithDebInfo>:-O2 -g -ggdb>
     $<$<CONFIG:MinSizeRel>:-Os>
     -fmacro-prefix-map=${PROJECT_SOURCE_DIR}/=
     -ffile-prefix-map=${PROJECT_SOURCE_DIR}/=

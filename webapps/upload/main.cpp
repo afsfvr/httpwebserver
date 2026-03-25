@@ -60,7 +60,7 @@ std::string Root::doGet(Request *request, Response *response, const std::string 
         path = cur_path + "resources";
         if (! fileExists(path)) {
             if (mkdir(path.c_str(), 0755) == -1) {
-                LOG_WARN("创建文件夹失败: %s", strerror(errno));
+                LOG_WARN("创建文件夹 %s 失败: %s", path.c_str(), strerror(errno));
                 response->sendError(404, "<h1>文件不存在</h1>");
                 return {};
             }
@@ -300,8 +300,7 @@ std::string Root::getfilename(const std::string& path, char *&buf, const std::st
 }
 
 bool Root::fileExists(const std::string &filename) const {
-    struct stat st;
-    return (stat(filename.c_str(), &st) == 0);
+    return access(filename.c_str(), F_OK) != -1;
 }
 
 bool Root::isFile(const std::string &filename) const {
@@ -332,7 +331,7 @@ bool Root::writeData(int &fd, char *buf, int &offset, const std::string &filenam
     }
 
     char *data = nullptr;
-    for (size_t i = 0; i + boundary.size() <= offset; ++i) {
+    for (size_t i = 0; i + boundary.size() <= static_cast<size_t>(offset); ++i) {
         if (memcmp(buf + i, boundary.c_str(), boundary.size()) == 0) {
             data = buf + i;
             break;
