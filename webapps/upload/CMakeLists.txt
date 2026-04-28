@@ -37,7 +37,9 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 )
 
 target_compile_options(${PROJECT_NAME} PRIVATE
-    -Wall
+    -Wall # 常用警告
+    -Wextra # 额外警告
+    -Wpedantic # 标准兼容警告
     $<$<CONFIG:Debug>:-g -O0>
     $<$<CONFIG:Release>:-O2>
     $<$<CONFIG:RelWithDebInfo>:-O2 -g>

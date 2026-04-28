@@ -102,9 +102,9 @@ size_t Request::read_body(char *dest, size_t len) {
         }
 #else
         ssize_t tmp = recv(m_fd, dest + size, min, 0);
+        if (tmp < 0) throw 2;
 #endif
         if (tmp == 0) throw 1;
-        if (tmp < 0) throw 2;
         size += tmp;
         min -= tmp;
         m_body_length -= tmp;
