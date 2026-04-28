@@ -140,6 +140,7 @@ void Response::write_len(const void *buf, size_t size, int flags) const {
     if (size <= 0) return;
     while (size > 0) {
 #ifdef HTTPS
+        (void) flags;
         if (m_ssl == nullptr) return;
         size_t len;
         int ret = SSL_write_ex(m_ssl, buf, size, &len);
@@ -153,11 +154,10 @@ void Response::write_len(const void *buf, size_t size, int flags) const {
         }
 #else
         ssize_t len = send(m_sd, buf, size, flags | MSG_NOSIGNAL);
+        if (len < 0) throw 103;
 #endif
         if (len > 0) {
             size -= len;
-        } else if (len < 0) {
-            throw 103;
         } else {
             throw 3;
         }

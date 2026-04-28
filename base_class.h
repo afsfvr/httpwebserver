@@ -23,6 +23,8 @@ public:
 };
 
 std::string BaseClass::doGet(Request *request, Response *response, const std::string &cur_path) {
+    (void) request;
+    (void) cur_path;
     response->sendError(405, "<h1>405</h1>");
     return {};
 }
@@ -59,22 +61,32 @@ void BaseClass::doHead(Request *request, Response *response, const std::string &
 }
 
 void BaseClass::doPost(Request *request, Response *response, const std::string &cur_path) {
+    (void) request;
+    (void) cur_path;
     response->sendError(405, "<h1>405</h1>");
 }
 
 void BaseClass::doPut(Request *request, Response *response, const std::string &cur_path) {
+    (void) request;
+    (void) cur_path;
     response->sendError(405, "<h1>405</h1>");
 }
 
 void BaseClass::doDelete(Request *request, Response *response, const std::string &cur_path) {
+    (void) request;
+    (void) cur_path;
     response->sendError(405, "<h1>405</h1>");
 }
 
 void BaseClass::doOptions(Request *request, Response *response, const std::string &cur_path) {
+    (void) request;
+    (void) cur_path;
     response->sendError(405, "<h1>405</h1>");
 }
 
 void BaseClass::doTrace(Request *request, Response *response, const std::string &cur_path) {
+    (void) request;
+    (void) cur_path;
     response->sendError(405, "<h1>405</h1>");
 }
 

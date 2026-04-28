@@ -103,6 +103,7 @@ void Log::flush() {
 }
 
 void* Log::run(void *p) {
+    (void) p;
     Log::getInstance()->async_write_log();
     pthread_exit(nullptr);
 }

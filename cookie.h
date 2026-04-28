@@ -29,7 +29,7 @@ class Cookie {
         const inline std::string& name() const { return m_name; }
         const inline std::string& value() const { return m_value; }
         const inline std::string& domain() const { return m_domain; }
-        const inline time_t expires() const { return m_expires; }
+        inline time_t expires() const { return m_expires; }
         inline bool httpOnly() const { return m_http_only; }
         inline int maxAge() const { return m_max_age; }
         inline bool partitioned() const { return m_partitioned; }

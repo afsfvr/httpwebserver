@@ -113,7 +113,7 @@ WebServer::WebServer():
     }
     if (bind(m_listenfd, reinterpret_cast<sockaddr*>(&addr), addr_len) < 0) {
         close(m_listenfd);
-        LOG_ERROR("bind:%s", strerror(errno));
+        LOG_ERROR("bind %d: %s", Config::getInstance()->getPort(), strerror(errno));
         exit(1);
     }
     getsockname(m_listenfd, reinterpret_cast<sockaddr*>(&addr), &addr_len);
@@ -138,7 +138,7 @@ WebServer::WebServer():
     }
     setnonblock(m_pipe[0]);
 
-    if ((m_epollfd = epoll_create(8)) < 0) {
+    if ((m_epollfd = epoll_create1(EPOLL_CLOEXEC)) < 0) {
         close(m_listenfd);
         LOG_ERROR("epoll_create:%s", strerror(errno));
         exit(1);
@@ -402,6 +402,8 @@ std::string WebServer::trim(const std::string &str) {
 #ifdef HTTPS
 int WebServer::alpnSelectCb(SSL *ssl, const unsigned char **out, unsigned char *outlen,
         const unsigned char *in, unsigned int inlen, void *arg) {
+    (void) ssl;
+    (void) arg;
 
     static const unsigned char proto[] = { 8, 'h','t','t','p','/','1','.','1' };
     constexpr const int len = sizeof(proto);
