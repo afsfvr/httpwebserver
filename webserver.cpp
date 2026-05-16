@@ -321,10 +321,10 @@ void WebServer::handlePipeEvent() {
 
         const char *data = m_pipeBuf.data() + offset;
         uint8_t type = static_cast<uint8_t>(data[0]);
-        uint8_t length = static_cast<uint8_t>(data[0]);
+        uint8_t length = static_cast<uint8_t>(data[1]);
         data += 2;
 
-        if (size - 2 - length < 0) break;
+        if (size - 2 < length) break;
 
         switch (type) {
         case 1: {

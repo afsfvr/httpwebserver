@@ -49,8 +49,8 @@ bool ThreadPool::canceljob(Task *work) {
     return false;
 }
 
-bool ThreadPool::addjob(Task* work) {
-    if (! m_run) return false;
+bool ThreadPool::addjob(Task *work) {
+    if (!m_run) return false;
     pthread_mutex_lock(&m_mutex);
     Data *data = new Data(work);
     if (m_head == nullptr) {
@@ -64,14 +64,14 @@ bool ThreadPool::addjob(Task* work) {
     return true;
 }
 
-void* ThreadPool::run(void *p) {
-    ThreadPool *pool = static_cast<ThreadPool*>(p);
+void *ThreadPool::run(void *p) {
+    ThreadPool *pool = static_cast<ThreadPool *>(p);
     while (pool->m_run) {
         pthread_mutex_lock(&pool->m_mutex);
         while (pool->m_head == nullptr && pool->m_run) {
             pthread_cond_wait(&pool->m_cond, &pool->m_mutex);
         }
-        if (! pool->m_run) {
+        if (!pool->m_run) {
             pthread_mutex_unlock(&pool->m_mutex);
             return nullptr;
         }

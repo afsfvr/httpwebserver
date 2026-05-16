@@ -11,7 +11,7 @@
 
 class BaseClass {
 public:
-    virtual ~BaseClass()=default;
+    virtual ~BaseClass() = default;
     virtual std::string doGet(Request *request, Response *response, const std::string &cur_path);
     virtual void doHead(Request *request, Response *response, const std::string &cur_path);
     virtual void doPost(Request *request, Response *response, const std::string &cur_path);
@@ -39,11 +39,11 @@ void BaseClass::doHead(Request *request, Response *response, const std::string &
     int fd = open("/dev/null", O_RDWR);
     Response resp(res_write, res_chunk, res_state, res_size, fd, keep_alive, res_headers, res_cookies
 #ifdef HTTPS
-            , nullptr
+        , nullptr
 #endif
-            );
+    );
     std::string filename = this->doGet(request, &resp, cur_path);
-    if ( ! res_write) {
+    if (!res_write) {
         if (filename.length() == 0) {
             res_headers.emplace("Content-Length", std::to_string(res_size));
         } else {
@@ -91,10 +91,10 @@ void BaseClass::doTrace(Request *request, Response *response, const std::string 
 }
 
 void BaseClass::service(Request *request, Response *response, const std::string &cur_path, char *filename) {
-    const std::string& method = request->getMethod();
+    const std::string &method = request->getMethod();
     if (method == "GET") {
         std::string name = this->doGet(request, response, cur_path);
-        if (! name.empty()) {
+        if (!name.empty()) {
             if (name[0] == '/' || name[0] == '\\') {
                 strncpy(filename, name.c_str(), 256);
             } else {
@@ -119,7 +119,7 @@ void BaseClass::service(Request *request, Response *response, const std::string 
     }
 }
 
-extern "C" BaseClass* createClass();
-extern "C" void deleteClass(BaseClass* base);
+extern "C" BaseClass *createClass();
+extern "C" void deleteClass(BaseClass *base);
 
 #endif

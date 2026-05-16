@@ -6,12 +6,12 @@
 
 Request::Request(
 #ifdef USE_REDIS
-        uint64_t &sessionId,
+    uint64_t &sessionId,
 #endif
 #ifdef HTTPS
-        SSL *ssl,
+    SSL *ssl,
 #endif
-        int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params):
+    int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params):
 #ifdef USE_REDIS
     m_session_id(sessionId),
 #endif
@@ -26,31 +26,31 @@ Session Request::getSession() const {
 }
 #endif
 
-const int& Request::getPort() const {
+const int &Request::getPort() const {
     return m_port;
 }
 
-const std::string& Request::getMethod() const {
+const std::string &Request::getMethod() const {
     return m_method;
 }
 
-const std::string& Request::getUrl() const {
+const std::string &Request::getUrl() const {
     return m_url;
 }
 
-const std::string& Request::getIp() const {
+const std::string &Request::getIp() const {
     return m_ip;
 }
 
-const std::map<std::string, std::string, case_insensitive_compare>& Request::getHeaders() const {
+const std::map<std::string, std::string, case_insensitive_compare> &Request::getHeaders() const {
     return m_headers;
 }
 
-const std::map<std::string, std::string>& Request::getParams() const {
+const std::map<std::string, std::string> &Request::getParams() const {
     return m_params;
 }
 
-const std::string* Request::getHeader(const std::string &key) const {
+const std::string *Request::getHeader(const std::string &key) const {
     auto it = m_headers.find(key);
     if (it == m_headers.end()) {
         return nullptr;
@@ -59,7 +59,7 @@ const std::string* Request::getHeader(const std::string &key) const {
     }
 }
 
-const std::string* Request::getParam(const std::string &key) const {
+const std::string *Request::getParam(const std::string &key) const {
     auto it = m_params.find(key);
     if (it == m_params.end()) {
         return nullptr;

@@ -9,13 +9,13 @@ class RedisPool;
 class RedisConn {
 public:
     RedisConn(RedisPool *pool, Redis *redis);
-    RedisConn(RedisConn&&);
-    RedisConn(const RedisConn&) = delete;
-    RedisConn& operator=(const RedisConn&) = delete;
+    RedisConn(RedisConn &&);
+    RedisConn(const RedisConn &) = delete;
+    RedisConn &operator=(const RedisConn &) = delete;
     ~RedisConn();
     operator bool() const;
-    Redis* operator->() const ;
-    Redis& operator*() const;
+    Redis *operator->() const;
+    Redis &operator*() const;
 private:
     RedisPool *m_pool;
     Redis *m_redis;
@@ -23,7 +23,7 @@ private:
 
 class RedisPool {
 public:
-    RedisPool(int minIdle, int maxIdle, int maxCount, const char *url, const int port, const char *username=nullptr, const char *password=nullptr);
+    RedisPool(int minIdle, int maxIdle, int maxCount, const char *url, const int port, const char *username = nullptr, const char *password = nullptr);
     ~RedisPool();
     int getIdleCount();
     RedisConn get();

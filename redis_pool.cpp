@@ -7,7 +7,7 @@
 
 RedisConn::RedisConn(RedisPool *pool, Redis *redis): m_pool(pool), m_redis(redis) {}
 
-RedisConn::RedisConn(RedisConn&& conn) {
+RedisConn::RedisConn(RedisConn &&conn) {
     this->m_pool = conn.m_pool;
     this->m_redis = conn.m_redis;
     conn.m_pool = nullptr;
@@ -22,11 +22,11 @@ RedisConn::operator bool() const {
     return m_redis != nullptr;
 }
 
-Redis* RedisConn::operator->() const {
+Redis *RedisConn::operator->() const {
     return m_redis;
 }
 
-Redis& RedisConn::operator*() const {
+Redis &RedisConn::operator*() const {
     return *m_redis;
 }
 
@@ -40,7 +40,7 @@ RedisPool::RedisPool(int minIdle, int maxIdle, int maxCount, const char *url, co
             if (isspace(username[i])) {
                 if (start == i) {
                     ++start;
-                } else if (! isspace(username[i - 1])) {
+                } else if (!isspace(username[i - 1])) {
                     end = i;
                 }
             }
@@ -58,7 +58,7 @@ RedisPool::RedisPool(int minIdle, int maxIdle, int maxCount, const char *url, co
             if (isspace(password[i])) {
                 if (start == i) {
                     ++start;
-                } else if (! isspace(password[i - 1])) {
+                } else if (!isspace(password[i - 1])) {
                     end = i;
                 }
             }
@@ -71,7 +71,7 @@ RedisPool::RedisPool(int minIdle, int maxIdle, int maxCount, const char *url, co
         }
     }
 
-    m_redis = new Redis*[maxCount];
+    m_redis = new Redis * [maxCount];
     m_idle = new bool[maxCount];
     for (int i = 0; i < maxCount; ++i) {
         if (m_idle_count >= m_min_idle) {
@@ -84,7 +84,7 @@ RedisPool::RedisPool(int minIdle, int maxIdle, int maxCount, const char *url, co
             ++m_idle_count;
             ++m_use_count;
             m_idle[i] = true;
-        } catch (const std::string& e) {
+        } catch (const std::string &e) {
             m_redis[i] = nullptr;
             m_idle[i] = false;
             LOG_WARN("redis[%d]创建失败:%s", i, e.c_str());
@@ -127,23 +127,23 @@ int RedisPool::getIdleCount() {
 }
 
 RedisConn RedisPool::get() {
-    if (m_redis == nullptr) return {nullptr, nullptr};
+    if (m_redis == nullptr) return { nullptr, nullptr };
     if (m_idle_count <= 0) adjustPool();
     if (m_use_count == 0) {
         LOG_ERROR("没有可用的redis连接,redis全部连接失败");
-        return {nullptr, nullptr};
+        return { nullptr, nullptr };
     }
     std::unique_lock<std::mutex> lock(m_mutex);
     cv.wait(lock, [&]() {return m_idle_count > 0 || m_use_count == 0;});
     Redis *redis = nullptr;
     for (int i = 0; i < m_max_count; ++i) {
         if (m_idle[i]) {
-            if (! m_redis[i]->live()) {
+            if (!m_redis[i]->live()) {
                 delete m_redis[i];
                 try {
                     m_redis[i] = new Redis(m_url, m_port, m_username, m_password);
                 } catch (const std::string &e) {
-                    LOG_WARN("redis连接失败:%s",e.c_str());
+                    LOG_WARN("redis连接失败:%s", e.c_str());
                     m_redis[i] = nullptr;
                     --m_use_count;
                 }
@@ -154,14 +154,14 @@ RedisConn RedisPool::get() {
             if (redis != nullptr) break;
         }
     }
-    return {this, redis};
+    return { this, redis };
 }
 
 void RedisPool::put(Redis *redis) {
     if (redis == nullptr || m_use_count == 0) return;
     m_mutex.lock();
     for (int i = 0; i < m_max_count; ++i) {
-        if (redis == m_redis[i] && ! m_idle[i]) {
+        if (redis == m_redis[i] && !m_idle[i]) {
             if (m_idle_count + 1 > m_max_count) {
                 delete redis;
                 m_redis[i] = nullptr;
@@ -188,7 +188,7 @@ void RedisPool::adjustPool() {
                 redis = new Redis(m_url, m_port, m_username, m_password);
             } catch (const std::string &e) {
                 redis = nullptr;
-                LOG_WARN("redis连接失败:%s",e.c_str());
+                LOG_WARN("redis连接失败:%s", e.c_str());
                 return;
             }
             m_mutex.lock();
