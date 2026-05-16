@@ -3,6 +3,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/uio.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <iostream>
@@ -39,7 +40,7 @@ enum class STATE {
  * 103 send err
  */
 
-HttpConnect::HttpConnect(const int &epollfd, const int &pipe, 
+HttpConnect::HttpConnect(const int &epollfd, const int &pipe,
 #ifdef HTTPS
         SSL *ssl,
 #endif
@@ -375,10 +376,15 @@ void HttpConnect::run() {
         LOG_DEBUG("抛出了异常: %d", i);
         m_state = STATE::CLOSE;
         HttpConnect *conn = this;
-        static constexpr const uint32_t size = sizeof(HttpConnect*);
-        int ret = write(m_pipe, &size, sizeof(size));
-        (void)ret;
-        ret = write(m_pipe, &conn, sizeof(HttpConnect*));
+        uint8_t data[2];
+        data[0] = 0x02; // type
+        data[1] = sizeof(HttpConnect*); // length
+        struct iovec iov[2];
+        iov[0].iov_base = data;
+        iov[0].iov_len = sizeof(data);
+        iov[1].iov_base = &conn;
+        iov[1].iov_len = sizeof(HttpConnect*);
+        ssize_t ret = writev(m_pipe, iov, 2);
         (void)ret;
     }
 }
@@ -816,10 +822,15 @@ void HttpConnect::handshake() {
         modfd(EPOLLOUT);
     } else {
         HttpConnect *conn = this;
-        static constexpr const uint32_t size = sizeof(HttpConnect*);
-        int ret = write(m_pipe, &size, sizeof(size));
-        (void)ret;
-        ret = write(m_pipe, &conn, sizeof(HttpConnect*));
+        uint8_t data[2];
+        data[0] = 0x02; // type
+        data[1] = sizeof(HttpConnect*); // length
+        struct iovec iov[2];
+        iov[0].iov_base = data;
+        iov[0].iov_len = sizeof(data);
+        iov[1].iov_base = &conn;
+        iov[1].iov_len = sizeof(HttpConnect*);
+        ssize_t ret = writev(m_pipe, iov, 2);
         (void)ret;
         return;
     }
