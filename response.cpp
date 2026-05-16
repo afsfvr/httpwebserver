@@ -14,11 +14,11 @@ extern std::string encoding;
 
 Response::Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers, std::set<Cookie> &cookies
 #ifdef HTTPS
-        , SSL *ssl
+    , SSL *ssl
 #endif
-        ): m_write(w), m_chunk(chunk), m_status(status), m_size(size), m_sd(sd), m_keep_alive(keep_alive), m_headers(headers), m_cookies(cookies) 
+): m_write(w), m_chunk(chunk), m_status(status), m_size(size), m_sd(sd), m_keep_alive(keep_alive), m_headers(headers), m_cookies(cookies)
 #ifdef HTTPS
-           , m_ssl(ssl)
+, m_ssl(ssl)
 #endif
 {}
 
@@ -45,26 +45,26 @@ void Response::sendRedirect(const std::string &url) {
     flush();
 }
 
-void Response::addCookie(const Cookie& cookie) {
-    if (! m_write) m_cookies.insert(cookie);
+void Response::addCookie(const Cookie &cookie) {
+    if (!m_write) m_cookies.insert(cookie);
 }
 
-const Cookie* Response::getCookie(const std::string& name, const std::string& domain) const {
+const Cookie *Response::getCookie(const std::string &name, const std::string &domain) const {
     for (auto iter = m_cookies.begin(); iter != m_cookies.end(); ++iter) {
         if (iter->domain() == domain && iter->name() == name) return &(*iter);
     }
     return nullptr;
 }
 
-std::set<Cookie>& Response::getCookies() {
+std::set<Cookie> &Response::getCookies() {
     return m_cookies;
 }
 
 void Response::addHeader(const std::string &key, const std::string &value) {
-    if (! m_write) m_headers.insert(std::make_pair(key, value));
+    if (!m_write) m_headers.insert(std::make_pair(key, value));
 }
 
-std::string* Response::getHeader(const std::string &key) const {
+std::string *Response::getHeader(const std::string &key) const {
     auto it = m_headers.find(key);
     if (it == m_headers.end()) {
         return nullptr;
@@ -73,7 +73,7 @@ std::string* Response::getHeader(const std::string &key) const {
     }
 }
 
-std::map<std::string, std::string, case_insensitive_compare>& Response::getHeaders() {
+std::map<std::string, std::string, case_insensitive_compare> &Response::getHeaders() {
     return m_headers;
 }
 
@@ -183,7 +183,7 @@ void Response::write_file(const std::string &filename) {
 }
 
 void Response::flush() {
-    if (! m_write) {
+    if (!m_write) {
         m_chunk = false;
         std::string buf = "HTTP/1.1 ";
         buf.append(std::to_string(m_status)).append("\r\n");
@@ -198,7 +198,7 @@ void Response::flush() {
             buf.append("Transfer-Encoding: chunked\r\n");
             m_chunk = true;
         }
-        char buff[128] = {'\0'};
+        char buff[128] = { '\0' };
         time_t timestamp = time(nullptr);
         std::strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&timestamp));
         buf.append("Date: ").append(buff);
@@ -230,7 +230,7 @@ int Response::getStatus() const {
 }
 
 std::string Response::time_tToHttpDate(time_t timestamp) const {
-    char buf[128] = {'\0'};
+    char buf[128] = { '\0' };
     std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&timestamp));
     return buf;
 }

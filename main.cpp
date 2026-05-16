@@ -16,7 +16,7 @@ WebServer *webserver;
 static struct termios termiosSettings;
 std::string encoding;
 void quit(int x);
-void daemonize(const char *outFile="/dev/null");
+void daemonize(const char *outFile = "/dev/null");
 void hookFunction();
 
 int main(int argc, char *argv[]) {
@@ -84,7 +84,7 @@ void daemonize(const char *outFile) {
         exit(0);
     }
     int input = open("/dev/null", O_RDWR);
-    int out = open(outFile, O_WRONLY | O_CREAT | O_TRUNC , 0664);
+    int out = open(outFile, O_WRONLY | O_CREAT | O_TRUNC, 0664);
     if (input < 0) {
         perror("/dev/null open出错");
         exit(1);

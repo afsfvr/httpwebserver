@@ -7,13 +7,13 @@
 
 class Redis {
 public:
-    Redis(const char *ip, const int port, const char *username=nullptr, const char *password=nullptr);
+    Redis(const char *ip, const int port, const char *username = nullptr, const char *password = nullptr);
     ~Redis();
-    bool saveSession(uint64_t sessionId, int interval=600);
+    bool saveSession(uint64_t sessionId, int interval = 600);
     bool existsSession(uint64_t sessionId);
     bool live();
-    bool updateExpire(uint64_t sessionId, int interval=-1);
-    bool setData(const char *key, const char *value, int expire=-1);
+    bool updateExpire(uint64_t sessionId, int interval = -1);
+    bool setData(const char *key, const char *value, int expire = -1);
     bool addSessionData(uint64_t sessionId, const char *key, const char *value);
     bool setSessionData(uint64_t sessionId, const char *key, const char *value);
     std::string getData(const char *key);

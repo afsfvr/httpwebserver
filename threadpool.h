@@ -8,7 +8,7 @@
 
 class Task {
 public:
-    virtual bool operator==(const Task *task)=0;
+    virtual bool operator==(const Task *task) = 0;
     virtual void run() = 0;
     virtual ~Task() = default;
 };
@@ -16,12 +16,12 @@ public:
 class ThreadPool {
 public:
     ThreadPool();
-    ThreadPool(const ThreadPool&) = delete;
-    ThreadPool& operator=(const ThreadPool&) = delete;
+    ThreadPool(const ThreadPool &) = delete;
+    ThreadPool &operator=(const ThreadPool &) = delete;
     ~ThreadPool();
     bool canceljob(Task *work);
-    bool addjob(Task* work);
-    static void* run(void *p);
+    bool addjob(Task *work);
+    static void *run(void *p);
 private:
     struct Data {
     public:

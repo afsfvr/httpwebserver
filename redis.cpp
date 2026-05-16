@@ -13,7 +13,7 @@ Redis::Redis(const char *ip, const int port, const char *username, const char *p
         throw s;
     }
     if (password != nullptr) {
-        redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "AUTH %s %s", username, password));
+        redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "AUTH %s %s", username, password));
         if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) {
             redisFree(m_context);
             if (reply == nullptr) {
@@ -26,7 +26,7 @@ Redis::Redis(const char *ip, const int port, const char *username, const char *p
         }
         freeReplyObject(reply);
     }
-    redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "PING"));
+    redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "PING"));
     if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) {
         redisFree(m_context);
         if (reply == nullptr) {
@@ -45,10 +45,10 @@ Redis::~Redis() {
 }
 
 bool Redis::saveSession(uint64_t sessionId, int interval) {
-    redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "HSETNX session:%llu sessionCreateTime %lu", sessionId, time(nullptr)));
+    redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "HSETNX session:%llu sessionCreateTime %lu", sessionId, time(nullptr)));
     bool ret = false;
     if (reply != nullptr && reply->type == REDIS_REPLY_INTEGER && reply->integer > 0) ret = true;
-    if (ret && ! updateExpire(sessionId, interval)) {
+    if (ret && !updateExpire(sessionId, interval)) {
         rmSession(sessionId);
         ret = false;
     }
@@ -57,7 +57,7 @@ bool Redis::saveSession(uint64_t sessionId, int interval) {
 }
 
 bool Redis::existsSession(uint64_t sessionId) {
-    redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "TYPE session:%llu", sessionId));
+    redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "TYPE session:%llu", sessionId));
     bool ret = false;
     if (reply != nullptr && (reply->type == REDIS_REPLY_STATUS || reply->type == REDIS_REPLY_STRING) && strncasecmp("hash", reply->str, 3) == 0) ret = true;
     freeReplyObject(reply);
@@ -65,7 +65,7 @@ bool Redis::existsSession(uint64_t sessionId) {
 }
 
 bool Redis::live() {
-    redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "PING"));
+    redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "PING"));
     bool ret = true;
     if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) ret = false;
     freeReplyObject(reply);
@@ -86,7 +86,7 @@ bool Redis::updateExpire(uint64_t sessionId, int interval) {
             }
         }
     }
-    redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "EXPIRE session:%llu %d", sessionId, interval));
+    redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "EXPIRE session:%llu %d", sessionId, interval));
     bool ret = false;
     if (reply != nullptr && reply->type == REDIS_REPLY_INTEGER && reply->integer > 0) ret = true;
     freeReplyObject(reply);
@@ -97,9 +97,9 @@ bool Redis::updateExpire(uint64_t sessionId, int interval) {
 bool Redis::setData(const char *key, const char *value, int expire) {
     redisReply *reply;
     if (expire > 0) {
-        reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "SET %s %s EX %d", key, value, expire));
+        reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "SET %s %s EX %d", key, value, expire));
     } else {
-        reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "SET %s %s", key, value));
+        reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "SET %s %s", key, value));
     }
     bool ret = true;
     if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) ret = false;
@@ -108,7 +108,7 @@ bool Redis::setData(const char *key, const char *value, int expire) {
 }
 
 bool Redis::addSessionData(uint64_t sessionId, const char *key, const char *value) {
-    redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "HSETNX session:%llu %s %s", sessionId, key, value));
+    redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "HSETNX session:%llu %s %s", sessionId, key, value));
     bool ret = false;
     if (reply != nullptr && reply->type == REDIS_REPLY_INTEGER && reply->integer > 0) ret = true;
     freeReplyObject(reply);
@@ -116,7 +116,7 @@ bool Redis::addSessionData(uint64_t sessionId, const char *key, const char *valu
 }
 
 bool Redis::setSessionData(uint64_t sessionId, const char *key, const char *value) {
-    redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "HSET session:%llu %s %s", sessionId, key, value));
+    redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "HSET session:%llu %s %s", sessionId, key, value));
     bool ret = true;
     if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) ret = false;
     freeReplyObject(reply);
@@ -124,7 +124,7 @@ bool Redis::setSessionData(uint64_t sessionId, const char *key, const char *valu
 }
 
 std::string Redis::getData(const char *key) {
-    redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "GET %s", key));
+    redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "GET %s", key));
     std::string s;
     if (reply != nullptr && reply->type == REDIS_REPLY_STRING) s = reply->str;
     freeReplyObject(reply);
@@ -132,7 +132,7 @@ std::string Redis::getData(const char *key) {
 }
 
 std::string Redis::getSessionData(uint64_t sessionId, const char *key) {
-    redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "HGET session:%llu %s", sessionId, key));
+    redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "HGET session:%llu %s", sessionId, key));
     std::string s;
     if (reply != nullptr && reply->type == REDIS_REPLY_STRING) s = reply->str;
     freeReplyObject(reply);
@@ -141,7 +141,7 @@ std::string Redis::getSessionData(uint64_t sessionId, const char *key) {
 
 std::map<std::string, std::string> Redis::getSessionData(uint64_t sessionId) {
     std::map<std::string, std::string> m;
-    redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "HGETALL session:%llu", sessionId));
+    redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "HGETALL session:%llu", sessionId));
     if (reply->type == REDIS_REPLY_MAP || reply->type == REDIS_REPLY_ARRAY) {
         for (size_t i = 0; i < reply->elements; i += 2) {
             m.emplace(reply->element[i]->str, reply->element[i + 1]->str);
@@ -152,7 +152,7 @@ std::map<std::string, std::string> Redis::getSessionData(uint64_t sessionId) {
 }
 
 bool Redis::rmSessionData(uint64_t sessionId, const char *key) {
-    redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "HDEL session:%llu %s", sessionId, key));
+    redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "HDEL session:%llu %s", sessionId, key));
     bool ret = false;
     if (reply != nullptr && reply->type == REDIS_REPLY_INTEGER && reply->integer > 0) ret = true;
     freeReplyObject(reply);
@@ -160,7 +160,7 @@ bool Redis::rmSessionData(uint64_t sessionId, const char *key) {
 }
 
 bool Redis::rmSession(uint64_t sessionId) {
-    redisReply *reply = reinterpret_cast<redisReply*>(redisCommand(m_context, "DEL session:%llu expire:%llu", sessionId, sessionId));
+    redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "DEL session:%llu expire:%llu", sessionId, sessionId));
     bool ret = false;
     if (reply != nullptr && reply->type == REDIS_REPLY_INTEGER && reply->integer > 0) ret = true;
     freeReplyObject(reply);

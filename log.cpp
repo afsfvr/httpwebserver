@@ -6,11 +6,11 @@
 #include "log.h"
 #include "config.h"
 
-static constexpr const char *COLOR_RESET  = "\033[0m";
-static constexpr const char *COLOR_RED    = "\033[31m";
+static constexpr const char *COLOR_RESET = "\033[0m";
+static constexpr const char *COLOR_RED = "\033[31m";
 static constexpr const char *COLOR_YELLOW = "\033[33m";
-static constexpr const char *COLOR_GREEN  = "\033[32m";
-static constexpr const char *COLOR_BLUE   = "\033[34m";
+static constexpr const char *COLOR_GREEN = "\033[32m";
+static constexpr const char *COLOR_BLUE = "\033[34m";
 static constexpr const int BUFSIZE = 2048;
 
 Log::Log() {
@@ -35,26 +35,26 @@ Log::~Log() {
     this->flush();
 }
 
-Log* Log::getInstance() {
+Log *Log::getInstance() {
     static Log log;
     return &log;
 }
 
 void Log::write_log(int level, const char *filename, int line, const char *format, ...) {
-    if (! m_write_log || level > def_level) return;
+    if (!m_write_log || level > def_level) return;
     time_t t = time(NULL);
     struct tm my_tm;
     localtime_r(&t, &my_tm);
     char buf[BUFSIZE];
     int n;
     if (level == 4) {
-        n = snprintf(buf, BUFSIZE - 1, "%s%4d-%02d-%02d %02d:%02d:%02d [%s] %s:%d --> ", COLOR_BLUE, my_tm.tm_year + 1900, my_tm.tm_mon +1, my_tm.tm_mday, my_tm.tm_hour, my_tm.tm_min, my_tm.tm_sec, "DEBUG", filename, line);
+        n = snprintf(buf, BUFSIZE - 1, "%s%4d-%02d-%02d %02d:%02d:%02d [%s] %s:%d --> ", COLOR_BLUE, my_tm.tm_year + 1900, my_tm.tm_mon + 1, my_tm.tm_mday, my_tm.tm_hour, my_tm.tm_min, my_tm.tm_sec, "DEBUG", filename, line);
     } else if (level == 3) {
-        n = snprintf(buf, BUFSIZE - 1, "%s%4d-%02d-%02d %02d:%02d:%02d [%s] %s:%d --> ", COLOR_GREEN, my_tm.tm_year + 1900, my_tm.tm_mon +1, my_tm.tm_mday, my_tm.tm_hour, my_tm.tm_min, my_tm.tm_sec, "INFO ", filename, line);
+        n = snprintf(buf, BUFSIZE - 1, "%s%4d-%02d-%02d %02d:%02d:%02d [%s] %s:%d --> ", COLOR_GREEN, my_tm.tm_year + 1900, my_tm.tm_mon + 1, my_tm.tm_mday, my_tm.tm_hour, my_tm.tm_min, my_tm.tm_sec, "INFO ", filename, line);
     } else if (level == 2) {
-        n = snprintf(buf, BUFSIZE - 1, "%s%4d-%02d-%02d %02d:%02d:%02d [%s] %s:%d --> ", COLOR_YELLOW, my_tm.tm_year + 1900, my_tm.tm_mon +1, my_tm.tm_mday, my_tm.tm_hour, my_tm.tm_min, my_tm.tm_sec, "WARN ", filename, line);
+        n = snprintf(buf, BUFSIZE - 1, "%s%4d-%02d-%02d %02d:%02d:%02d [%s] %s:%d --> ", COLOR_YELLOW, my_tm.tm_year + 1900, my_tm.tm_mon + 1, my_tm.tm_mday, my_tm.tm_hour, my_tm.tm_min, my_tm.tm_sec, "WARN ", filename, line);
     } else if (level == 1) {
-        n = snprintf(buf, BUFSIZE - 1, "%s%4d-%02d-%02d %02d:%02d:%02d [%s] %s:%d --> ", COLOR_RED, my_tm.tm_year + 1900, my_tm.tm_mon +1, my_tm.tm_mday, my_tm.tm_hour, my_tm.tm_min, my_tm.tm_sec, "ERROR", filename, line);
+        n = snprintf(buf, BUFSIZE - 1, "%s%4d-%02d-%02d %02d:%02d:%02d [%s] %s:%d --> ", COLOR_RED, my_tm.tm_year + 1900, my_tm.tm_mon + 1, my_tm.tm_mday, my_tm.tm_hour, my_tm.tm_min, my_tm.tm_sec, "ERROR", filename, line);
     } else {
         return;
     }
@@ -73,19 +73,19 @@ void Log::write_log(int level, const char *filename, int line, const char *forma
     buf[m + count + 1] = '\0';
     for (int i = m - 1; i >= n && count > 0; --i) {
         if (buf[i] == '\r') {
-            buf [i + count--] = 'r';
+            buf[i + count--] = 'r';
             buf[i + count] = '\\';
         } else if (buf[i] == '\n') {
-            buf [i + count--] = 'n';
+            buf[i + count--] = 'n';
             buf[i + count] = '\\';
         } else if (buf[i] == '\t') {
-            buf [i + count--] = 't';
+            buf[i + count--] = 't';
             buf[i + count] = '\\';
         } else if (buf[i] == '\f') {
-            buf [i + count--] = 'f';
+            buf[i + count--] = 'f';
             buf[i + count] = '\\';
         } else if (buf[i] == '\v') {
-            buf [i + count--] = 'v';
+            buf[i + count--] = 'v';
             buf[i + count] = '\\';
         } else {
             buf[i + count] = buf[i];
@@ -102,7 +102,7 @@ void Log::flush() {
     fflush(m_fp);
 }
 
-void* Log::run(void *p) {
+void *Log::run(void *p) {
     (void) p;
     Log::getInstance()->async_write_log();
     pthread_exit(nullptr);

@@ -5,7 +5,7 @@
 
 #include "config.h"
 
-Config::Config(): m_port(8888), m_thread_num(8), m_log_level(3), m_async_write_log(false), m_redis_ip("127.0.0.1"), m_redis_port(6379), m_redis_min_idle(1), m_redis_max_idle(4), m_redis_max_count(8), m_ipv4{false}, m_ipv6{false} {
+Config::Config(): m_port(8888), m_thread_num(8), m_log_level(3), m_async_write_log(false), m_redis_ip("127.0.0.1"), m_redis_port(6379), m_redis_min_idle(1), m_redis_max_idle(4), m_redis_max_count(8), m_ipv4{ false }, m_ipv6{ false } {
     m_type.emplace("css", "text/css");
     m_type.emplace("xml", "application/xml");
     m_type.emplace("png", "image/png");
@@ -25,7 +25,7 @@ Config::Config(): m_port(8888), m_thread_num(8), m_log_level(3), m_async_write_l
     m_type.emplace("other", "application/octet-stream");
 }
 
-Config* Config::getInstance() {
+Config *Config::getInstance() {
     static Config config;
     return &config;
 }
@@ -57,10 +57,10 @@ void Config::parse(int argc, char *argv[]) {
         {"maxIdle", 1, nullptr, 'M'},
         {"count", 1, nullptr, 'c'},
         {"help", 0, nullptr, 'h'},
-        {nullptr, 0, nullptr, 0}};
+        {nullptr, 0, nullptr, 0} };
     int index = 0, c = -1;
     while ((c = getopt_long(argc, argv, "46p:t:W:d:l:aw:r:i:P:u:S:m:M:c:h", argarr, &index)) >= 0) {
-        switch(c) {
+        switch (c) {
 #ifdef HTTPS
         case 0:
             if (strncmp(argarr[index].name, "ssl-cert", 8) == 0) {
@@ -151,7 +151,7 @@ void Config::parse(int argc, char *argv[]) {
         }
     }
 
-    if (! m_ipv4 && ! m_ipv6) {
+    if (!m_ipv4 && !m_ipv6) {
         m_ipv4 = m_ipv6 = true;
     }
     if (m_work_dir.length() == 0) {
@@ -197,11 +197,11 @@ int Config::getThreadNum() const {
     return m_thread_num;
 }
 
-const std::string& Config::getWorkDirectory() const {
+const std::string &Config::getWorkDirectory() const {
     return m_work_dir;
 }
 
-const std::string& Config::getDaemon() const {
+const std::string &Config::getDaemon() const {
     return m_daemon;
 }
 
@@ -213,15 +213,15 @@ bool Config::isAsyncWriteLog() const {
     return m_async_write_log;
 }
 
-const std::string& Config::getWebappsPath() const {
+const std::string &Config::getWebappsPath() const {
     return m_webapps_path;
 }
 
-const std::string& Config::getRootUrl() const {
+const std::string &Config::getRootUrl() const {
     return m_root_url;
 }
 
-const std::string& Config::getRedisIp() const {
+const std::string &Config::getRedisIp() const {
     return m_redis_ip;
 }
 
@@ -229,11 +229,11 @@ int Config::getRedisPort() const {
     return m_redis_port;
 }
 
-const std::string& Config::getRedisName() const {
+const std::string &Config::getRedisName() const {
     return m_redis_name;
 }
 
-const std::string& Config::getRedisPasswd() const {
+const std::string &Config::getRedisPasswd() const {
     return m_redis_passwd;
 }
 
@@ -249,7 +249,7 @@ int Config::getRedisMaxCount() const {
     return m_redis_max_count;
 }
 
-const std::map<std::string, std::string, case_insensitive_compare>& Config::getType() const {
+const std::map<std::string, std::string, case_insensitive_compare> &Config::getType() const {
     return m_type;
 }
 
@@ -262,10 +262,10 @@ bool Config::allowIpv6() const {
 }
 
 #ifdef HTTPS
-const std::string& Config::getCertPath() const {
+const std::string &Config::getCertPath() const {
     return m_cert;
 }
-const std::string& Config::getKeyPath() const {
+const std::string &Config::getKeyPath() const {
     return m_key;
 }
 #endif

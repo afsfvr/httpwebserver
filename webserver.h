@@ -14,8 +14,8 @@
 class WebServer {
 public:
     WebServer();
-    WebServer(const WebServer&) = delete;
-    WebServer& operator=(const WebServer&) = delete;
+    WebServer(const WebServer &) = delete;
+    WebServer &operator=(const WebServer &) = delete;
     ~WebServer();
     void eventLoop();
     int setnonblock(int fd);
@@ -25,15 +25,15 @@ public:
     void stop();
 private:
     void handlePipeEvent();
-    void addBlackList(const std::string &ip, bool save=true);
-    void removeBlackList(const std::string &ip, bool save=true);
+    void addBlackList(const std::string &ip, bool save = true);
+    void removeBlackList(const std::string &ip, bool save = true);
     void loadBlackList();
     void saveBlackList();
     bool inBlackList(const std::string &ip);
     std::string trim(const std::string &str);
 #ifdef HTTPS
     static int alpnSelectCb(SSL *ssl, const unsigned char **out, unsigned char *outlen,
-                   const unsigned char *in, unsigned int inlen, void *arg);
+        const unsigned char *in, unsigned int inlen, void *arg);
 #endif
 
     std::unordered_set<std::string> m_blackList;
