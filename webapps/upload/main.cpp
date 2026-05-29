@@ -34,7 +34,8 @@ private:
     void replaceAll(std::string &str, const std::string &before, const std::string &after) const;
     int base64CharValue(char c) const;
     std::string base64Decode(const char *input, size_t len) const;
-    bool mkdirp(const std::string &path, mode_t mode) const; // mkdir -p
+    std::string fileSize(const std::string &path) const;
+    void getValidLinuxFilename(std::string& filename) const;
 };
 
 extern "C" BaseClass* createClass() {
@@ -80,7 +81,7 @@ std::string Root::doGet(Request *request, Response *response, const std::string 
     }
 
     std::string html;
-    std::ifstream htmlFile{cur_path + "index.html"};
+    std::ifstream htmlFile{cur_path + "template.min.html"};
     if (htmlFile.is_open()) {
         std::stringstream buffer;
         buffer << htmlFile.rdbuf();
@@ -94,27 +95,32 @@ std::string Root::doGet(Request *request, Response *response, const std::string 
     std::string urlPrefix = path.substr(path.find("resources") + 9);
     std::string backLink;
     if (urlPrefix.size() != 0) {
-        backLink = "<a href='/upload" + urlPrefix.substr(0, urlPrefix.find_last_of('/')) + "' style='color:blue'>返回上一级</a><br/><br/>";
+        backLink = "/upload" + urlPrefix.substr(0, urlPrefix.find_last_of('/'));
     }
 
-    std::string fileList;
+    std::string fileList{"["};
     DIR *dir = opendir(path.c_str());
-    int id = 0;
+    if (path.back() != '/') path.push_back('/');
     if (dir != nullptr) {
         urlPrefix.push_back('/');
         struct dirent *d;
         while ((d = readdir(dir)) != nullptr) {
             if (strcmp(d->d_name, ".") != 0 && strcmp(d->d_name, "..") != 0) {
-                ++id;
+                std::string fill_path = path + d->d_name;
                 std::string d_name = htmlEscape(d->d_name);
-                if (isFile(path + "/" + d->d_name)) {
-                    fileList += "<div id=\"" + std::to_string(id)+ "\"><a download href=\"/upload" + (urlPrefix + d_name) + "\" style=\"color: black;font-weight: bold; margin-right: 10px\">" + d_name + "</a><input type=\"button\" onclick=\"del('" + std::to_string(id) + "')\" value=\"删除\"><br/><br/></div>";
+                if (isFile(fill_path)) {
+                    fileList += "{\"name\": \"" + d_name + "\", \"size\": \"" + fileSize(fill_path) + "\", \"url\": \"/upload" + urlPrefix + d_name + "\"},";
                 } else {
-                    fileList += "<div id=\"" + std::to_string(id)+ "\"><a href=\"/upload" + (urlPrefix + d_name) + "\" style=\"color: blue; margin-right: 10px\">" + d_name + "</a><input type=\"button\" onclick=\"del('" + std::to_string(id) + "')\" value=\"删除\"><br/><br/></div>";
+                    fileList += "{\"name\": \"" + d_name + "\", \"url\": \"/upload" + urlPrefix + d_name + "\"},";
                 }
             }
         }
         closedir(dir);
+    }
+    if (fileList.back() == ',') {
+        fileList.back() = ']';
+    } else {
+        fileList.push_back(']');
     }
 
     replaceAll(html, "{{BACK_LINK}}", backLink);
@@ -204,16 +210,18 @@ void Root::doDelete(Request *request, Response *response, const std::string &cur
         response->sendError(404, "文件不存在");
         return;
     }
-        if (remove(path.c_str()) == 0) {
-            response->write_data("删除成功");
-        } else {
-            response->write_data(strerror(errno));
-        }
-        return;
-    response->sendError(403, "非法请求");
+    if (remove(path.c_str()) == 0) {
+        response->write_data("删除成功");
+    } else {
+        response->write_data(strerror(errno));
+    }
 }
 
 void Root::service(Request *request, Response *response, const std::string &cur_path, char *filename) {
+    if (request->getUrl() == "/upload") {
+        response->sendRedirect("/upload/");
+        return;
+    }
     if (validate(request)) {
         BaseClass::service(request, response, cur_path, filename);
     } else {
@@ -235,7 +243,7 @@ bool Root::validate(Request *request) const {
     if (index == std::string::npos) return false;
     std::string username = base64.substr(0, index);
     std::string password = base64.substr(index + 1);
-    if (username == "username" && password == "password") return true;
+    if (username == "afsfvr" && password == "passwd") return true;
     return false;
 }
 
@@ -257,17 +265,9 @@ std::string Root::getfilename(const std::string& path, char *&buf, const std::st
     }
     buf = buf + (data - buf + 4);
 
-    if (! fileExists(path)) {
-        mkdirp(path.c_str(), 0755);
-    }
-
     std::string filename;
     for (;; ++name) {
         if (*name == '\0') {
-            std::random_device rd;
-            std::mt19937 gen(rd());
-            std::uniform_int_distribution<> dist(0, 10000000);
-            filename = std::to_string(time(nullptr)) + std::to_string(dist(gen));
             break;
         } else if (*name == '"') {
             ++ name;
@@ -290,6 +290,7 @@ std::string Root::getfilename(const std::string& path, char *&buf, const std::st
             }
         }
     }
+    getValidLinuxFilename(filename);
 
     std::string tmp = path + "/" + filename;
     int count = 0;
@@ -477,31 +478,42 @@ std::string Root::base64Decode(const char *input, size_t len) const {
     return output;
 }
 
-bool Root::mkdirp(const std::string &path, mode_t mode) const {
-    if (path.empty()) return false;
-
-    for (size_t pos = 0; pos < path.length();) {
-        size_t index = path.find('/', pos);
-        std::string current;
-        if (index == std::string::npos) {
-            current = path;
-            pos = path.length();
-        } else {
-            current = path.substr(0, index);
-            pos = index + 1;
+std::string Root::fileSize(const std::string &path) const {
+    try {
+        double size = static_cast<double>(std::filesystem::file_size(path));
+        const char* units[] = {"B", "KB", "MB", "GB"};
+        int i = 0;
+        while (size >= 1024 && i < 3) {
+            size /= 1024;
+            ++i;
         }
+        char buf[64];
+        sprintf(buf, "%.1f %s", size, units[i]);
+        return buf;
+    } catch (const std::exception &e) {
+        return "0 B";
+    }
+}
 
-        if (current.empty() || current.back() == '/') continue;
-
-        struct stat st;
-        if (stat(current.c_str(), &st) != 0) {
-            if (mkdir(current.c_str(), mode) != 0) {
-                if (errno != EEXIST) return false;
-            }
-        } else if (!S_ISDIR(st.st_mode)) {
-            return false;
-        }
+void Root::getValidLinuxFilename(std::string& filename) const {
+    if (filename.empty() || filename.front() == ' ' || filename.front() == '.' || filename.back() == ' ') {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<uint64_t> dist(0, 0xFFFFFFFF);
+        filename = std::to_string(time(nullptr)) + std::to_string(dist(gen));
     }
 
-    return true;
+    for (auto &c: filename) {
+        if (c == '\\' || c == '/' || c == '\0' || c == '<' || c == '>' || c == '\'' || c == '"' || c == '&' || c == '?' || c == '*' || c == '|' || static_cast<uint8_t>(c) < 32) {
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::uniform_int_distribution<uint64_t> dist(0, 0xFFFFFFFF);
+            std::string extension = std::filesystem::path(filename).extension().string();
+            filename = std::to_string(time(nullptr)) + std::to_string(dist(gen));
+            if (extension.size() > 1) {
+                filename += extension;
+            }
+            return;
+        }
+    }
 }
