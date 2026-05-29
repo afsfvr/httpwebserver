@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang='zh'>
+<head>
+    <meta charset='UTF-8'>
+    <meta content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes' name='viewport'>
+    <title>文件管理</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(145deg, #f6f9fc 0%, #edf2f7 100%);
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, 'Noto Sans', sans-serif;
+            padding: 2rem 1.5rem;
+            min-height: 100vh;
+            color: #1a2c3e;
+        }
+
+        .container {
+            max-width: 880px;
+            margin: 0 auto;
+            background: rgba(255,255,255,0.85);
+            backdrop-filter: blur(2px);
+            border-radius: 2rem;
+            box-shadow: 0 20px 35px -12px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0,0,0,0.02);
+            overflow: hidden;
+        }
+
+        .hero {
+            background: white;
+            padding: 1.8rem 2rem 1.5rem;
+            border-bottom: 1px solid #e9edf2;
+        }
+
+        .hero h1 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, #1f4e6e, #2b6c4e);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            letter-spacing: -0.3px;
+        }
+
+        .hero p {
+            font-size: 0.9rem;
+            color: #5b6e8c;
+            margin-top: 0.5rem;
+        }
+
+        .upload-area {
+            background: #ffffffdd;
+            backdrop-filter: blur(4px);
+            margin: 1.5rem 2rem 1rem;
+            padding: 1.25rem 1.5rem;
+            border-radius: 1.5rem;
+            border: 1px solid #eef2f8;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+        }
+
+        .form-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .file-label {
+            background: linear-gradient(135deg, #4A90E2, #357ABD);
+            padding: 0.6rem 1.2rem;
+            border-radius: 2rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            box-shadow: 0 2px 4px rgba(74, 144, 226, 0.2);
+        }
+
+        .file-label:hover {
+            background: linear-gradient(135deg, #3a7bc8, #2c6aa8);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(74, 144, 226, 0.3);
+        }
+
+        .file-label:active {
+            transform: translateY(0);
+        }
+
+        .file-label svg {
+            width: 18px;
+            height: 18px;
+            stroke: white;
+            fill: none;
+            stroke-width: 2;
+        }
+
+        input[type="file"] {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+            overflow: hidden;
+        }
+
+        .file-name-preview {
+            font-size: 0.85rem;
+            color: #3e6b7c;
+            background: #eff3f6;
+            padding: 0.4rem 1rem;
+            border-radius: 2rem;
+            flex: 1;
+            min-width: 140px;
+            white-space: nowrap;
+            overflow-x: hidden;
+            text-overflow: ellipsis;
+            transition: all 0.2s ease;
+        }
+
+        .file-name-preview.loading {
+            background: #e8f0fe;
+            color: #2c6b4e;
+            position: relative;
+            padding-right: 2rem;
+        }
+
+        .file-name-preview.loading::after {
+            content: '';
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 14px;
+            height: 14px;
+            border: 2px solid #2c6b4e;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: translateY(-50%) rotate(360deg); }
+        }
+
+        .btn-upload {
+            background: linear-gradient(135deg, #27ae60, #1e8449);
+            border: none;
+            padding: 0.6rem 1.6rem;
+            border-radius: 2rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(39, 174, 96, 0.2);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-upload:hover {
+            background: linear-gradient(135deg, #219a52, #196f3d);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(39, 174, 96, 0.3);
+        }
+
+        .btn-upload:active {
+            transform: translateY(0);
+        }
+
+        .nav-back {
+            margin: 0.5rem 2rem 0rem;
+            display: inline-block;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            background: #eef2f7;
+            padding: 0.45rem 1.2rem;
+            border-radius: 2rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #2c5a6e;
+            text-decoration: none;
+            transition: 0.2s;
+        }
+
+        .back-link:hover {
+            background: #e2e9f0;
+            color: #1c4b5e;
+        }
+
+        .filelist-section {
+            padding: 0.5rem 2rem 2rem;
+        }
+
+        .section-title {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            margin: 1rem 0 1rem 0;
+            border-bottom: 2px solid #e2edf2;
+            padding-bottom: 0.6rem;
+        }
+
+        .section-title span:first-child {
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: #1f485e;
+        }
+
+        .section-title span:last-child {
+            font-size: 0.75rem;
+            background: #e9f0f5;
+            padding: 0.2rem 0.7rem;
+            border-radius: 20px;
+            color: #5c7f8c;
+        }
+
+        .file-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .file-item {
+            background: white;
+            border-radius: 1.2rem;
+            padding: 0.8rem 1.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.8rem;
+            transition: all 0.2s;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03), 0 0 0 1px #eff3f8;
+        }
+
+        .file-item:hover {
+            box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.12), 0 0 0 1px #dfe8f0;
+            transform: translateY(-1px);
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+            flex: 2;
+            min-width: 180px;
+        }
+
+        .file-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #f0f4f9, #e8edf3);
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .file-item:hover .file-icon {
+            transform: scale(1.05);
+        }
+
+        .file-details {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .file-link {
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: 0.1s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .file-link.file-download {
+            color: #2c3e50;
+        }
+
+        .file-link.file-download:hover {
+            color: #3498db;
+            text-decoration: underline;
+        }
+
+        .file-link.dir-link {
+            color: #2c3e50;
+        }
+
+        .file-link.dir-link:hover {
+            color: #27ae60;
+            text-decoration: underline;
+        }
+
+        .file-meta {
+            font-size: 0.7rem;
+            color: #8ca3b9;
+            margin-top: 0.2rem;
+            display: flex;
+            gap: 0.8rem;
+        }
+
+        .file-size {
+            background: #f0f5fa;
+            padding: 0.2rem 0.6rem;
+            border-radius: 30px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: #54738f;
+        }
+
+        .del-btn {
+            background: linear-gradient(135deg, #fff5f5, #ffe8e8);
+            border: 1px solid #ffe0e0;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: #e74c3c;
+            cursor: pointer;
+            padding: 0.4rem 1rem;
+            border-radius: 2rem;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .del-btn:hover {
+            background: linear-gradient(135deg, #fee, #ffe0e0);
+            border-color: #e74c3c;
+            color: #c0392b;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(231, 76, 60, 0.1);
+        }
+
+        .empty-files {
+            text-align: center;
+            padding: 2.5rem 1rem;
+            background: #fafcfd;
+            border-radius: 1.5rem;
+            color: #98b1c9;
+            font-weight: 500;
+        }
+
+        @media (max-width: 560px) {
+            body {
+                padding: 1rem;
+            }
+            .upload-area, .filelist-section, .hero {
+                padding-left: 1rem;
+                padding-right: 1rem;
+            }
+            .form-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .file-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .del-btn {
+                align-self: flex-end;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="hero">
+        <h1>⚡ 简易文件管理器</h1>
+    </div>
+
+    <!-- 上传表单 -->
+    <div class="upload-area">
+        <form action='' method='post' enctype='multipart/form-data' id="uploadForm">
+            <div class="form-row">
+                <label class="file-label" id="customFileLabel" for="fileInput">
+                    <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none">
+                        <path d="M13 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8" />
+                        <polyline points="16 2 22 8 16 8" />
+                        <line x1="10" y1="14" x2="21" y2="14" />
+                        <line x1="15" y1="18" x2="21" y2="18" />
+                        <line x1="18" y1="11" x2="18" y2="17" />
+                    </svg>
+                    选择文件
+                </label>
+                <input type='file' name='uploadFile' id="fileInput" multiple='multiple' />
+                <span class="file-name-preview" id="filePreview">未选择任何文件</span>
+                <button type="submit" class="btn-upload" id="subBtn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                        <path d="M12 21V9m0 0 3 3m-3-3-3 3M5 3h14" />
+                    </svg>
+                    上传文件
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 返回上一级 - 根据 BACK_LINK 变量决定是否显示 -->
+    <div class="nav-back" id="navBackContainer" style="display: none;">
+        <a href="" id="backLink" class="back-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            返回上一级
+        </a>
+    </div>
+
+    <!-- 文件列表展示区 -->
+    <div class="filelist-section">
+        <div class="section-title">
+            <span>📁 当前目录内容</span>
+            <span id="fileCountBadge">0个项目</span>
+        </div>
+        <div id="fileListContainer" class="file-grid"></div>
+    </div>
+</div>
+
+<script>
+    const BACK_LINK = "{{BACK_LINK}}";
+    const FILE_LIST = {{FILE_LIST}};
+
+    // 演示数据
+    // const FILE_LIST = [
+    //     { name: "annual_report.pdf", size: "2.5 MB", url: "/upload/annual_report.pdf" },
+    //     { name: "team_photo.jpg", size: "3.2 MB", url: "/upload/team_photo.jpg" },
+    //     { name: "documents", url: "/upload/documents" },
+    //     { name: "images", url: "/upload/images" },
+    //     { name: "presentation.pptx", size: "5.1 MB", url: "/upload/presentation.pptx" },
+    //     { name: "video.mp42", size: "15.8 MB", url: "/upload/video.mp41" },
+    //     { name: "video.jpg", size: "15.8 MB", url: "/upload/video.jpg" },
+    //     { name: "video.ppt", size: "15.8 MB", url: "/upload/video.ppt" },
+    //     { name: "video.dox", size: "15.8 MB", url: "/upload/video.dox" }
+    // ];
+
+    const fileInput = document.getElementById('fileInput');
+    const previewSpan = document.getElementById('filePreview');
+    const uploadForm = document.getElementById('uploadForm');
+    const fileContainer = document.getElementById('fileListContainer');
+    const fileCountSpan = document.getElementById('fileCountBadge');
+    const navBackContainer = document.getElementById('navBackContainer');
+    const backLink = document.getElementById('backLink');
+
+    // 处理返回上一级链接的显示
+    function initBackLink() {
+        if (BACK_LINK && BACK_LINK.trim() !== '') {
+            backLink.href = BACK_LINK;
+            navBackContainer.style.display = 'inline-block';
+        } else {
+            navBackContainer.style.display = 'none';
+        }
+    }
+
+    function formatBytes(bytes, decimals = 1) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const dm = decimals < 0 ? 0 : decimals;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    }
+
+    fileInput.addEventListener('change', function(e) {
+        const files = Array.from(e.target.files);
+
+        if(files.length === 0) {
+            previewSpan.textContent = '未选择任何文件';
+            previewSpan.classList.remove('loading');
+            return;
+        }
+
+        previewSpan.textContent = `📎 已选择 ${files.length} 个文件`;
+        previewSpan.classList.add('loading');
+
+        if (files.length === 1) {
+            setTimeout(() => {
+                previewSpan.textContent = `📄 ${files[0].name} (${formatBytes(files[0].size)})`;
+                previewSpan.classList.remove('loading');
+            }, 10);
+        } else {
+            let totalSize = 0;
+            let calculatedCount = 0;
+
+            function calculateChunk(startIndex) {
+                const chunkSize = 10;
+                const endIndex = Math.min(startIndex + chunkSize, files.length);
+
+                for (let i = startIndex; i < endIndex; i++) {
+                    totalSize += files[i].size;
+                    calculatedCount++;
+                }
+
+                if (calculatedCount < files.length) {
+                    previewSpan.textContent = `📎 已选择 ${files.length} 个文件 (计算中 ${Math.round(calculatedCount/files.length*100)}%)`;
+                    setTimeout(() => calculateChunk(endIndex), 5);
+                } else {
+                    previewSpan.textContent = `📎 ${files.length} 个文件 · 总计 ${formatBytes(totalSize)}`;
+                    previewSpan.classList.remove('loading');
+                }
+            }
+
+            setTimeout(() => calculateChunk(0), 10);
+        }
+    });
+
+    function validateUpload(event) {
+        const uploadFile = document.getElementsByName('uploadFile')[0];
+        if (uploadFile && uploadFile.files && uploadFile.files.length > 0) {
+            return true;
+        } else {
+            alert('📭 未选择文件!');
+            event.preventDefault();
+            return false;
+        }
+    }
+
+    uploadForm.addEventListener('submit', function(e) {
+        if (!validateUpload(e)) {
+            e.preventDefault();
+        }
+    });
+
+    window.del = function(id) {
+        if (confirm('⚠️ 确认删除此项吗？删除后无法恢复。')) {
+            const req = new XMLHttpRequest();
+            const div = document.getElementById(id);
+            if (!div || div.getElementsByTagName('a').length !== 1) {
+                alert('❓ 未找到该文件或目录!');
+                return;
+            }
+            const a = div.getElementsByTagName('a')[0];
+            req.open('DELETE', a.href);
+            req.send();
+            req.onreadystatechange = function () {
+                if (req.readyState === 4) {
+                    alert(req.responseText);
+                    if (req.status === 200 && req.responseText === '删除成功') {
+                        if (div && div.remove) {
+                            div.remove();
+                        }
+                        updateFileCount();
+                    }
+                }
+            }
+        }
+    };
+
+    function updateFileCount() {
+        if(!fileContainer) return;
+        const items = fileContainer.querySelectorAll('.file-item');
+        const count = items.length;
+        if(fileCountSpan) fileCountSpan.innerText = count + '个项目';
+        if(count === 0) {
+            fileContainer.innerHTML = '<div class="empty-files">✨ 暂无文件或目录，请上传吧</div>';
+        }
+    }
+
+    // 获取文件图标（根据文件名判断类型）
+    function getFileIcon(fileName, isDir) {
+        if (isDir) {
+            return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#27ae60" stroke-width="1.8">
+                        <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"/>
+                    </svg>`;
+        }
+
+        const ext = fileName.split('.').pop().toLowerCase();
+
+        switch(ext) {
+            case 'pdf':
+                return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="1.6">
+                            <path d="M13 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8"/>
+                            <polyline points="16 2 22 8 16 8"/>
+                        </svg>`;
+            case 'jpg':
+            case 'jpeg':
+            case 'png':
+            case 'gif':
+            case 'webp':
+                return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3498db" stroke-width="1.6">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <polyline points="21 15 16 10 5 21"/>
+                        </svg>`;
+            case 'pptx':
+            case 'ppt':
+                return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e67e22" stroke-width="1.6">
+                            <path d="M13 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8"/>
+                            <polyline points="16 2 22 8 16 8"/>
+                            <line x1="10" y1="12" x2="16" y2="12"/>
+                            <line x1="12" y1="16" x2="16" y2="16"/>
+                        </svg>`;
+            case 'doc':
+            case 'docx':
+                return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2c3e50" stroke-width="1.6">
+                            <path d="M13 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8"/>
+                            <polyline points="16 2 22 8 16 8"/>
+                            <line x1="10" y1="12" x2="16" y2="12"/>
+                        </svg>`;
+            case 'mp4':
+            case 'mov':
+            case 'avi':
+                return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9b59b6" stroke-width="1.6">
+                            <rect x="2" y="4" width="20" height="16" rx="2"/>
+                            <polygon points="9 8 17 12 9 16 9 8"/>
+                        </svg>`;
+            default:
+                return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7f8c8d" stroke-width="1.6">
+                            <path d="M13 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8"/>
+                            <polyline points="16 2 22 8 16 8"/>
+                        </svg>`;
+        }
+    }
+
+    function renderFileList(filesData) {
+        if (!filesData || !Array.isArray(filesData)) {
+            console.error('renderFileList: 无效的数据格式');
+            fileContainer.innerHTML = '<div class="empty-files">⚠️ 数据格式错误</div>';
+            updateFileCount();
+            return;
+        }
+
+        fileContainer.innerHTML = '';
+
+        if (filesData.length === 0) {
+            fileContainer.innerHTML = '<div class="empty-files">📂 暂无文件，点击上传吧</div>';
+            updateFileCount();
+            return;
+        }
+
+        filesData.forEach((item, index) => {
+            const isDir = !item.size;
+            const idAttr = `item_${index}_${item.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            const hrefVal = item.url;
+            const linkText = item.name;
+            const sizeText = item.size || '';
+
+            const newCard = document.createElement('div');
+            newCard.className = 'file-item';
+            newCard.id = idAttr;
+
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'file-info';
+
+            const iconDiv = document.createElement('div');
+            iconDiv.className = 'file-icon';
+            iconDiv.innerHTML = getFileIcon(linkText, isDir);
+
+            const detailsDiv = document.createElement('div');
+            detailsDiv.className = 'file-details';
+
+            const fileLink = document.createElement('a');
+            fileLink.href = hrefVal;
+            if(isDir) {
+                fileLink.className = 'file-link dir-link';
+            } else {
+                fileLink.className = 'file-link file-download';
+                fileLink.setAttribute('download', '');
+            }
+            fileLink.innerText = linkText;
+
+            const metaSpan = document.createElement('div');
+            metaSpan.className = 'file-meta';
+            if(!isDir && sizeText) {
+                const sizeSpanEl = document.createElement('span');
+                sizeSpanEl.className = 'file-size';
+                sizeSpanEl.innerText = sizeText;
+                metaSpan.appendChild(sizeSpanEl);
+            } else if(isDir) {
+                const dirHint = document.createElement('span');
+                dirHint.innerText = '📁 目录';
+                dirHint.style.fontSize = '0.7rem';
+                dirHint.style.color = '#6f8faa';
+                metaSpan.appendChild(dirHint);
+            } else {
+                metaSpan.innerText = '📄 文件';
+            }
+
+            detailsDiv.appendChild(fileLink);
+            detailsDiv.appendChild(metaSpan);
+            infoDiv.appendChild(iconDiv);
+            infoDiv.appendChild(detailsDiv);
+
+            const delButton = document.createElement('button');
+            delButton.className = 'del-btn';
+            delButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-13"/><path d="M9 4h6v2H9z"/></svg> 删除`;
+            delButton.onclick = (function(iid) {
+                return function() { window.del(iid); };
+            })(idAttr);
+
+            newCard.appendChild(infoDiv);
+            newCard.appendChild(delButton);
+            fileContainer.appendChild(newCard);
+        });
+
+        updateFileCount();
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+        initBackLink();
+        renderFileList(FILE_LIST);
+    });
+</script>
+</body>
+</html>
+
