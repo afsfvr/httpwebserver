@@ -400,6 +400,25 @@ void HttpConnect::write_data() {
                 setResponseState(500, "<h1>500</h1>");
                 LOG_DEBUG("socket:%d,运行动态库错误", m_sd);
             }
+            // 处理请求体
+            if (m_body_len > 1024 * 1024) { // 未处理请求体大于1M直接关闭连接
+                throw 4;
+            } else if (m_body_len > 0) {
+                char tmp[1024];
+                while (m_body_len > 0) {
+                    size_t min = std::min(1024ul, m_body_len);
+                    size_t len;
+#ifdef HTTPS
+                    int ret = SSL_read_ex(m_ssl, tmp, min, &len);
+                    if (ret == 0) throw 4;
+#else
+                    len = recv(m_sd, tmp, min, 0);
+                    if (len == 0) throw 1;
+                    if (len == -1) throw 4;
+#endif
+                    m_body_len -= len;
+                }
+            }
         } catch (int ex) {
             setnonblock(m_sd);
             throw ex;
@@ -755,7 +774,7 @@ bool HttpConnect::run_dynamic_lib() {
                         res_headers.insert_or_assign("Content-Length", std::to_string(res_size));
                         setResponseState(res_state);
                     } else {
-                        LOG_INFO("socket:%d response status:%d", m_sd, res_state);
+                        LOG_DEBUG("socket:%d lib response status: %d", m_sd, res_state);
                         response.flush();
                         if (res_chunk) {
                             const char *buf = "0\r\n\r\n";
