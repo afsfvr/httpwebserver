@@ -37,7 +37,8 @@ public:
     void addCookie(const Cookie &cookie);
     const Cookie *getCookie(const std::string &name, const std::string &domain = "") const;
     std::set<Cookie> &getCookies();
-    void addHeader(const std::string &key, const std::string &value);
+    bool addHeader(const std::string &key, const std::string &value);
+    void setHeader(const std::string &key, const std::string &value);
     std::string *getHeader(const std::string &key) const;
     std::map<std::string, std::string, case_insensitive_compare> &getHeaders();
     void write_data(const void *buf, const size_t size);
