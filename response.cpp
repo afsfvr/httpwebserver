@@ -23,7 +23,7 @@ Response::Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool
 {}
 
 void Response::setContentLength(size_t len) {
-    addHeader("Content-Length", std::to_string(len));
+    setHeader("Content-Length", std::to_string(len));
 }
 
 void Response::sendError(int num, const std::string &errmsg) {
@@ -41,7 +41,7 @@ void Response::sendRedirect(const std::string &url) {
     m_status = 302;
     setContentLength(0);
     m_size = 0;
-    addHeader("Location", url);
+    setHeader("Location", url);
     flush();
 }
 
@@ -60,8 +60,13 @@ std::set<Cookie> &Response::getCookies() {
     return m_cookies;
 }
 
-void Response::addHeader(const std::string &key, const std::string &value) {
-    if (!m_write) m_headers.insert(std::make_pair(key, value));
+bool Response::addHeader(const std::string &key, const std::string &value) {
+    if (!m_write) return m_headers.insert(std::make_pair(key, value)).second;
+    return false;
+}
+
+void Response::setHeader(const std::string &key, const std::string &value) {
+    if (!m_write) m_headers.insert_or_assign(key, value);
 }
 
 std::string *Response::getHeader(const std::string &key) const {
