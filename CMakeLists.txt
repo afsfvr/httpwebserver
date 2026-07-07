@@ -55,20 +55,26 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 )
 
 target_compile_options(${PROJECT_NAME} PRIVATE
-    -Wall # 常用警告
-    -Wextra # 额外警告
-    -Wpedantic # 标准兼容警告
-    $<$<CONFIG:Debug>:-g -ggdb -O0>
-    $<$<CONFIG:Release>:-O2>
-    $<$<CONFIG:RelWithDebInfo>:-O2 -g -ggdb>
-    $<$<CONFIG:MinSizeRel>:-Os>
-    -fmacro-prefix-map=${PROJECT_SOURCE_DIR}/=
-    -ffile-prefix-map=${PROJECT_SOURCE_DIR}/=
+    $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra -Wpedantic>
+    $<$<CXX_COMPILER_ID:Clang>:-Wall -Wextra -Wpedantic>
+
+    $<$<AND:$<CXX_COMPILER_ID:GNU>,$<CONFIG:Debug>>:-g -ggdb -O0>
+    $<$<AND:$<CXX_COMPILER_ID:Clang>,$<CONFIG:Debug>>:-g -O0>
+
+    $<$<AND:$<CXX_COMPILER_ID:GNU>,$<CONFIG:Release>>:-O2>
+    $<$<AND:$<CXX_COMPILER_ID:Clang>,$<CONFIG:Release>>:-O2>
+
+    $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:
+        -fmacro-prefix-map=${PROJECT_SOURCE_DIR}/=
+        -ffile-prefix-map=${PROJECT_SOURCE_DIR}/=
+    >
 )
 
 target_link_libraries(${PROJECT_NAME} pthread dl)
 
-target_link_options(${PROJECT_NAME} PRIVATE -rdynamic)
+target_link_options(${PROJECT_NAME} PRIVATE
+    -rdynamic
+)
 
 if(BUILD_WEBAPPS)
     add_subdirectory(webapps/root)
