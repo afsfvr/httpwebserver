@@ -18,9 +18,9 @@
 static const unsigned int MAX_EVENT = 60000;
 
 WebServer::WebServer():
-    m_run{ true },
+    m_run{ true }
 #ifdef HTTPS
-    m_ctx{ nullptr } {
+    , m_ctx{ nullptr } {
     OPENSSL_init_ssl(0, nullptr);
 
     m_ctx = SSL_CTX_new(TLS_server_method());

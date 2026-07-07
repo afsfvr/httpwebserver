@@ -407,11 +407,12 @@ void HttpConnect::write_data() {
                 char tmp[1024];
                 while (m_body_len > 0) {
                     size_t min = std::min(1024ul, m_body_len);
-                    size_t len;
 #ifdef HTTPS
+                    size_t len;
                     int ret = SSL_read_ex(m_ssl, tmp, min, &len);
                     if (ret == 0) throw 4;
 #else
+                    ssize_t len;
                     len = recv(m_sd, tmp, min, 0);
                     if (len == 0) throw 1;
                     if (len == -1) throw 4;
