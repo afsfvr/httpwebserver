@@ -19,13 +19,8 @@ static const unsigned int MAX_EVENT = 60000;
 
 WebServer::WebServer():
     m_run{ true },
-    m_add_connect{ Config::getInstance()->allowIpv6()
-        ? (Config::getInstance()->allowIpv4()
-                ? std::bind(&WebServer::add_connect_v4_v6, this)
-                : std::bind(&WebServer::add_connect_v6, this))
-                : std::bind(&WebServer::add_connect_v4, this) }
 #ifdef HTTPS
-    , m_ctx{ nullptr } {
+    m_ctx{ nullptr } {
     OPENSSL_init_ssl(0, nullptr);
 
     m_ctx = SSL_CTX_new(TLS_server_method());
@@ -63,99 +58,103 @@ WebServer::WebServer():
 #else
     {
 #endif
-        if (getrlimit(RLIMIT_OFILE, &m_limit) < 0) {
-            LOG_ERROR("getrlimit:%s", strerror(errno));
-            exit(1);
-        }
-        struct rlimit l;
-        l.rlim_cur = std::max((unsigned int) m_limit.rlim_cur, MAX_EVENT);
-        l.rlim_max = std::max((unsigned int) m_limit.rlim_max, MAX_EVENT);
-        if (setrlimit(RLIMIT_OFILE, &l) < 0) {
-            LOG_ERROR("setrlimit:%s", strerror(errno));
-            exit(1);
-        }
-        LOG_INFO("最多可存在%u个文件描述符", l.rlim_cur);
-        if ((m_listenfd = socket(Config::getInstance()->allowIpv6() ? PF_INET6 : PF_INET, SOCK_STREAM, 0)) < 0) {
-            LOG_ERROR("socket:%s", strerror(errno));
-            exit(1);
-        }
-
-        int val = 1;
-        if (setsockopt(m_listenfd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val)) < 0) {
-            LOG_WARN("setsockopt SO_REUSEADDR:%s", strerror(errno));
-        }
-
-        sockaddr_storage addr{};
-        socklen_t addr_len;
-        if (Config::getInstance()->allowIpv6()) {
-            val = Config::getInstance()->allowIpv4() ? 0 : 1;
-            int ret = setsockopt(m_listenfd, IPPROTO_IPV6, IPV6_V6ONLY, &val, sizeof(val));
-            if (ret < 0) {
-                LOG_WARN("setsockopt IPV6_V6ONLY:%s", strerror(errno));
-            }
-            if (ret == 0 && val == 0) {
-                LOG_INFO("同时允许ipv4和ipv6连接");
-            } else {
-                LOG_INFO("仅允许ipv6连接");
-            }
-            sockaddr_in6 *address = reinterpret_cast<sockaddr_in6 *>(&addr);
-            address->sin6_family = AF_INET6;
-            address->sin6_port = htons(Config::getInstance()->getPort());
-            inet_pton(AF_INET6, "::", &address->sin6_addr);
-            addr_len = sizeof(*address);
-        } else {
-            sockaddr_in *address = reinterpret_cast<sockaddr_in *>(&addr);
-            address->sin_family = AF_INET;
-            address->sin_port = htons(Config::getInstance()->getPort());
-            inet_pton(AF_INET, "0.0.0.0", &address->sin_addr);
-            addr_len = sizeof(*address);
-            LOG_INFO("仅允许ipv4连接");
-        }
-        if (bind(m_listenfd, reinterpret_cast<sockaddr *>(&addr), addr_len) < 0) {
-            close(m_listenfd);
-            LOG_ERROR("bind %d: %s", Config::getInstance()->getPort(), strerror(errno));
-            exit(1);
-        }
-        getsockname(m_listenfd, reinterpret_cast<sockaddr *>(&addr), &addr_len);
-        if (Config::getInstance()->allowIpv6()) {
-            sockaddr_in6 *address = reinterpret_cast<sockaddr_in6 *>(&addr);
-            LOG_INFO("监听端口为：%d", ntohs(address->sin6_port));
-        } else {
-            sockaddr_in *address = reinterpret_cast<sockaddr_in *>(&addr);
-            LOG_INFO("监听端口为：%d", ntohs(address->sin_port));
-        }
-
-        if (listen(m_listenfd, SOMAXCONN) < 0) {
-            close(m_listenfd);
-            LOG_ERROR("listen:%s", strerror(errno));
-            exit(1);
-        }
-
-        if (pipe(m_pipe) < 0) {
-            close(m_listenfd);
-            LOG_ERROR("pipe:%s", strerror(errno));
-            exit(1);
-        }
-        setnonblock(m_pipe[0]);
-
-        if ((m_epollfd = epoll_create1(EPOLL_CLOEXEC)) < 0) {
-            close(m_listenfd);
-            LOG_ERROR("epoll_create:%s", strerror(errno));
-            exit(1);
-        }
-
-        struct epoll_event ev;
-        ev.data.fd = m_listenfd;
-        ev.events = EPOLLIN;
-        epoll_ctl(m_epollfd, EPOLL_CTL_ADD, m_listenfd, &ev);
-
-        ev.data.fd = m_pipe[0];
-        ev.events = EPOLLIN;
-        epoll_ctl(m_epollfd, EPOLL_CTL_ADD, m_pipe[0], &ev);
-        loadBlackList();
+    if (getrlimit(RLIMIT_OFILE, &m_limit) < 0) {
+        LOG_ERROR("getrlimit:%s", strerror(errno));
+        exit(1);
+    }
+    struct rlimit l;
+    l.rlim_cur = std::max((unsigned int) m_limit.rlim_cur, MAX_EVENT);
+    l.rlim_max = std::max((unsigned int) m_limit.rlim_max, MAX_EVENT);
+    if (setrlimit(RLIMIT_OFILE, &l) < 0) {
+        LOG_ERROR("setrlimit:%s", strerror(errno));
+        exit(1);
+    }
+    LOG_INFO("最多可存在%u个文件描述符", l.rlim_cur);
+    if ((m_listenfd = socket(Config::getInstance()->allowIpv6() ? PF_INET6 : PF_INET, SOCK_STREAM, 0)) < 0) {
+        LOG_ERROR("socket:%s", strerror(errno));
+        exit(1);
     }
 
+    int val = 1;
+    if (setsockopt(m_listenfd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val)) < 0) {
+        LOG_WARN("setsockopt SO_REUSEADDR:%s", strerror(errno));
+    }
+
+    sockaddr_storage addr{};
+    socklen_t addr_len;
+    if (Config::getInstance()->allowIpv6()) {
+        val = Config::getInstance()->allowIpv4() ? 0 : 1;
+        int ret = setsockopt(m_listenfd, IPPROTO_IPV6, IPV6_V6ONLY, &val, sizeof(val));
+        if (ret < 0) {
+            LOG_WARN("setsockopt IPV6_V6ONLY:%s", strerror(errno));
+        }
+        if (ret == 0 && val == 0) {
+            LOG_INFO("同时允许ipv4和ipv6连接");
+        } else {
+            LOG_INFO("仅允许ipv6连接");
+        }
+        sockaddr_in6 *address = reinterpret_cast<sockaddr_in6 *>(&addr);
+        address->sin6_family = AF_INET6;
+        address->sin6_port = htons(Config::getInstance()->getPort());
+        inet_pton(AF_INET6, "::", &address->sin6_addr);
+        addr_len = sizeof(*address);
+    } else {
+        sockaddr_in *address = reinterpret_cast<sockaddr_in *>(&addr);
+        address->sin_family = AF_INET;
+        address->sin_port = htons(Config::getInstance()->getPort());
+        inet_pton(AF_INET, "0.0.0.0", &address->sin_addr);
+        addr_len = sizeof(*address);
+        LOG_INFO("仅允许ipv4连接");
+    }
+    if (bind(m_listenfd, reinterpret_cast<sockaddr *>(&addr), addr_len) < 0) {
+        close(m_listenfd);
+        LOG_ERROR("bind %d: %s", Config::getInstance()->getPort(), strerror(errno));
+        exit(1);
+    }
+    getsockname(m_listenfd, reinterpret_cast<sockaddr *>(&addr), &addr_len);
+    if (Config::getInstance()->allowIpv6()) {
+        sockaddr_in6 *address = reinterpret_cast<sockaddr_in6 *>(&addr);
+        LOG_INFO("监听端口为：%d", ntohs(address->sin6_port));
+    } else {
+        sockaddr_in *address = reinterpret_cast<sockaddr_in *>(&addr);
+        LOG_INFO("监听端口为：%d", ntohs(address->sin_port));
+    }
+
+    if (listen(m_listenfd, SOMAXCONN) < 0) {
+        close(m_listenfd);
+        LOG_ERROR("listen:%s", strerror(errno));
+        exit(1);
+    }
+
+    if (pipe(m_pipe) < 0) {
+        close(m_listenfd);
+        LOG_ERROR("pipe:%s", strerror(errno));
+        exit(1);
+    }
+    setnonblock(m_pipe[0]);
+
+    if ((m_epollfd = epoll_create1(EPOLL_CLOEXEC)) < 0) {
+        close(m_listenfd);
+        LOG_ERROR("epoll_create:%s", strerror(errno));
+        exit(1);
+    }
+
+    struct epoll_event ev;
+    ev.data.fd = m_listenfd;
+    ev.events = EPOLLIN;
+    epoll_ctl(m_epollfd, EPOLL_CTL_ADD, m_listenfd, &ev);
+
+    ev.data.fd = m_pipe[0];
+    ev.events = EPOLLIN;
+    epoll_ctl(m_epollfd, EPOLL_CTL_ADD, m_pipe[0], &ev);
+    loadBlackList();
+
+    m_pool = new ThreadPool;
+}
+
 WebServer::~WebServer() {
+    delete m_pool;
+    m_pool = nullptr;
     saveBlackList();
     epoll_ctl(m_epollfd, EPOLL_CTL_DEL, m_listenfd, nullptr);
     epoll_ctl(m_epollfd, EPOLL_CTL_DEL, m_pipe[0], nullptr);
@@ -180,16 +179,17 @@ void WebServer::eventLoop() {
         for (int i = 0; i < count; i++) {
             int fd = events[i].data.fd;
             if (fd == m_listenfd) {
-                m_add_connect();
+                add_connect_v4_v6();
             } else if (fd == m_pipe[0]) {
                 handlePipeEvent();
             } else {
                 HttpConnect *conn = reinterpret_cast<HttpConnect *>(events[i].data.ptr);
                 if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
                     LOG_DEBUG("收到事件%d,删除文件描述符%d", events[i].events, static_cast<int>(*conn));
-                    delete conn;
+                    bool ret = m_pool->cancelAndDeleteJob(conn);
+                    if (! ret) delete conn;
                 } else if (events[i].events & (EPOLLIN | EPOLLOUT)) {
-                    m_pool.addjob(conn);
+                    m_pool->addJob(conn);
                 }
             }
         }
@@ -340,7 +340,8 @@ void WebServer::handlePipeEvent() {
                 HttpConnect *conn = nullptr;
                 memcpy(&conn, data, sizeof(HttpConnect *));
                 LOG_DEBUG("管道删除文件描述符 %d", (int) *conn);
-                delete conn;
+                bool ret = m_pool->cancelAndDeleteJob(conn);
+                if (! ret) delete conn;
             }
             break;
         }

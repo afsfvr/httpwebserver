@@ -43,9 +43,8 @@ private:
     int m_listenfd;
     int m_epollfd;
     int m_pipe[2];
-    ThreadPool m_pool;
+    ThreadPool *m_pool;
     bool m_run;
-    const std::function<void()> m_add_connect;
 #ifdef HTTPS
     SSL_CTX *m_ctx;
 #endif
