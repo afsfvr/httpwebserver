@@ -1,7 +1,7 @@
 #ifdef USE_REDIS
 
-#include "log.h"
 #include "redis_pool.h"
+#include "config.h"
 
 RedisConn::RedisConn(RedisPool *pool, Redis *redis): m_pool(pool), m_redis(redis) {}
 
@@ -28,50 +28,19 @@ Redis &RedisConn::operator*() const {
     return *m_redis;
 }
 
-RedisPool::RedisPool(int minIdle, int maxIdle, int maxCount, const char *url, const int port, const char *username, const char *password): m_min_idle(minIdle), m_max_idle(maxIdle), m_max_count(maxCount), m_idle_count(0), m_use_count(0), m_port(port), m_username(nullptr), m_password(nullptr) {
-    m_url = new char[strlen(url) + 1];
-    strcpy(m_url, url);
+RedisPool::RedisPool(): m_idle_count(0), m_use_count(0) {
+    Config *config = Config::getInstance();
+    m_min_idle = config->getRedisMinIdle();
+    m_max_idle = config->getRedisMaxIdle();
+    m_max_count = config->getRedisMaxCount();
+    m_url = config->getRedisIp();
+    m_port = config->getRedisPort();
+    m_username = config->getRedisName();
+    m_password = config->getRedisPasswd();
 
-    if (username != nullptr) {
-        int start = 0, end = 0, i = 0;
-        for (int i = 0; username[i] != '\0'; ++i) {
-            if (isspace(username[i])) {
-                if (start == i) {
-                    ++start;
-                } else if (!isspace(username[i - 1])) {
-                    end = i;
-                }
-            }
-        }
-        if (end == 0) end = i;
-        if (end - start + 1 > 1) {
-            m_username = new char[end - start + 1];
-            strncpy(m_username, username + start, end - start);
-            m_username[end] = '\0';
-        }
-    }
-    if (password != nullptr) {
-        int start = 0, end = 0, i = 0;
-        for (int i = 0; password[i] != '\0'; ++i) {
-            if (isspace(password[i])) {
-                if (start == i) {
-                    ++start;
-                } else if (!isspace(password[i - 1])) {
-                    end = i;
-                }
-            }
-        }
-        if (end == 0) end = i;
-        if (end - start + 1 > 1) {
-            m_password = new char[end - start + 1];
-            strncpy(m_password, password + start, end - start);
-            m_password[end] = '\0';
-        }
-    }
-
-    m_redis = new Redis * [maxCount];
-    m_idle = new bool[maxCount];
-    for (int i = 0; i < maxCount; ++i) {
+    m_redis = new Redis * [m_max_count];
+    m_idle = new bool[m_max_count];
+    for (int i = 0; i < m_max_count; ++i) {
         if (m_idle_count >= m_min_idle) {
             m_redis[i] = nullptr;
             m_idle[i] = false;
@@ -85,7 +54,7 @@ RedisPool::RedisPool(int minIdle, int maxIdle, int maxCount, const char *url, co
         } catch (const std::string &e) {
             m_redis[i] = nullptr;
             m_idle[i] = false;
-            SPDLOG_WARN("redis[{}]创建失败:{}", i, e);
+            SPDLOG_WARN("redis[{}]创建失败: {}", i, e);
             if (i >= 10 && m_use_count == 0) break;
         }
     }
@@ -108,9 +77,6 @@ RedisPool::~RedisPool() {
     cv.notify_all();
     m_mutex.unlock();
     std::this_thread::yield();
-    if (m_url != nullptr) delete[] m_url;
-    if (m_username != nullptr) delete[] m_username;
-    if (m_password != nullptr) delete[] m_password;
     delete[] m_redis;
     delete[] m_idle;
     m_url = nullptr;

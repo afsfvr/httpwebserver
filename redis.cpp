@@ -2,16 +2,16 @@
 
 #include "redis.h"
 
-Redis::Redis(const char *ip, const int port, const char *username, const char *password) {
-    m_context = redisConnect(ip, port);
+Redis::Redis(const std::string &ip, const int port, const std::string &username, const std::string &password) {
+    m_context = redisConnect(ip.c_str(), port);
     if (m_context == nullptr) throw std::string("无法分配redis上下文");
     if (m_context->err != 0) {
         std::string s(m_context->errstr);
         redisFree(m_context);
         throw s;
     }
-    if (password != nullptr) {
-        redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "AUTH %s %s", username, password));
+    if (! password.empty()) {
+        redisReply *reply = reinterpret_cast<redisReply *>(redisCommand(m_context, "AUTH %s %s", username.c_str(), password.c_str()));
         if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) {
             redisFree(m_context);
             if (reply == nullptr) {

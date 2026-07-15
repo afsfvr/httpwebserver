@@ -20,7 +20,7 @@ private:
 
 class RedisPool {
 public:
-    RedisPool(int minIdle, int maxIdle, int maxCount, const char *url, const int port, const char *username = nullptr, const char *password = nullptr);
+    RedisPool();
     ~RedisPool();
     int getIdleCount();
     RedisConn get();
@@ -32,10 +32,10 @@ private:
     int m_max_count;
     int m_idle_count;
     int m_use_count;
-    char *m_url;
-    const int m_port;
-    char *m_username;
-    char *m_password;
+    std::string m_url;
+    int m_port;
+    std::string m_username;
+    std::string m_password;
     Redis **m_redis;
     bool *m_idle;
     std::mutex m_mutex;

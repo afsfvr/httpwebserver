@@ -5,7 +5,7 @@
 
 class Redis {
 public:
-    Redis(const char *ip, const int port, const char *username = nullptr, const char *password = nullptr);
+    Redis(const std::string &ip, const int port, const std::string &username, const std::string &password);
     ~Redis();
     bool saveSession(uint64_t sessionId, int interval = 600);
     bool existsSession(uint64_t sessionId);

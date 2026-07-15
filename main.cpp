@@ -38,7 +38,7 @@ int main(int argc, char *argv[]) {
 
 #ifdef USE_REDIS
     pool = nullptr;
-    pool = new RedisPool(config->getRedisMinIdle(), config->getRedisMaxIdle(), config->getRedisMaxCount(), config->getRedisIp().c_str(), config->getRedisPort());
+    pool = new RedisPool();
 #endif
     signal(SIGPIPE, SIG_IGN);
     signal(SIGINT, quit);
