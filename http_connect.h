@@ -1,8 +1,6 @@
 #ifndef HTTP_CONNECT_
 #define HTTP_CONNECT_
 
-#include <string>
-#include <map>
 #ifdef HTTPS
 #include <openssl/ssl.h>
 #endif
@@ -15,6 +13,8 @@ enum class STATE;
 
 class HttpConnect: public Task {
     constexpr static int MAX_BUFSIZE = 2048;
+    friend class Request;
+    friend class Response;
 
 public:
     HttpConnect(const int &epollfd, const int &pipe,
@@ -35,58 +35,65 @@ private:
     void init();
     int setblock(const int &fd);
     int setnonblock(const int &fd);
-    void read_data();
+    void readData();
     void parse();
-    void parse_line(char *data);
-    void parse_head(char *data);
-    void parse_param(char *data);
-    void write_data();
-    bool write_head();
-    void init_write_lib();
-    void init_write_file(const std::string &filename);
+    void parseLine(char *data);
+    void parseHead(char *data);
+    void parseParam(char *data);
+    void writeData();
+    bool writeHead();
+    void initWriteLib();
+    void initWriteFile(const std::string &filename);
     void setCookie();
     void setResponseState(int s, const char *err = nullptr);
-    bool run_dynamic_lib();
+    bool runDynamicLib();
     bool isFile(const std::string &filename) const;
+    std::string trim(const std::string &str) const;
 #ifdef HTTPS
     void handshake();
 #endif
+
 #ifdef USE_REDIS
-    uint64_t res_session_id;
+    uint64_t session_id_;
 #endif
-    bool res_write;
-    bool res_chunk;
-    int res_state;
-    size_t res_size;
-    std::map<std::string, std::string, case_insensitive_compare> res_headers;
-    std::set<Cookie> res_cookies;
-    int epollfd;
-    int m_pipe;
-    int m_sd;
-    char m_buf[MAX_BUFSIZE];
-    int m_read_byte;
-    char *m_file_data;
-    size_t m_send_byte;
-    size_t m_have_byte;
-    size_t m_file_length;
-    size_t m_body_len;
-    std::string m_send_head;
-    std::string m_dynamic_lib_file;
-    std::map<std::string, std::string, case_insensitive_compare> headers;
-    std::map<std::string, std::string> params;
-    STATE m_state;
-    std::string m_ip;
-    int m_port;
-    std::string m_method;
-    std::string m_url;
-    int response_state;
-    bool m_keep_alive;
-    Request request;
-    Response response;
+    std::string lib_file_;
+    int epollfd_;
+    int pipe_;
+    int sd_;
+    STATE state_;
+    std::string ip_;
+    int port_;
+    std::vector<std::string> forward_;
+    std::string method_;
+    std::string url_;
+    bool keep_alive_;
 #ifdef HTTPS
-    SSL *m_ssl;
-    bool m_handshake;
+    SSL *ssl_;
+    bool handshake_;
 #endif
+
+    // request
+    Request request_;
+    std::map<std::string, std::string, case_insensitive_compare> request_headers_;
+    std::map<std::string, std::string> request_params_;
+    char request_buf_[MAX_BUFSIZE];
+    int request_read_byte_;
+    size_t request_body_length_;
+    
+    // response
+    Response response_;
+    bool response_write_;
+    bool response_chunk_;
+    int response_state_;
+    char response_buf_[MAX_BUFSIZE];
+    size_t response_size_;
+    std::map<std::string, std::string, case_insensitive_compare> response_headers_;
+    std::set<Cookie> response_cookies_;
+    char *response_file_ptr_;
+    size_t response_file_length_;
+    size_t response_send_byte_;
+    size_t response_have_byte_;
+    std::string response_send_head_;
 };
 
 #endif

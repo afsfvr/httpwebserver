@@ -1,85 +1,73 @@
-#include <map>
-#include <thread>
-#include <ctime>
-#include <cstring>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <sys/sendfile.h>
-#include <sys/socket.h>
-
+#include "http_connect.h"
 #include "response.h"
 
 extern std::string encoding;
 
-Response::Response(bool &w, bool &chunk, int &status, size_t &size, int sd, bool &keep_alive, std::map<std::string, std::string, case_insensitive_compare> &headers, std::set<Cookie> &cookies
-#ifdef HTTPS
-    , SSL *ssl
-#endif
-): m_write(w), m_chunk(chunk), m_status(status), m_size(size), m_sd(sd), m_keep_alive(keep_alive), m_headers(headers), m_cookies(cookies)
-#ifdef HTTPS
-, m_ssl(ssl)
-#endif
-{}
+Response::Response(HttpConnect *conn): conn_{conn} {}
 
 void Response::setContentLength(size_t len) {
     setHeader("Content-Length", std::to_string(len));
 }
 
 void Response::sendError(int num, const std::string &errmsg) {
-    if (m_write) return;
-    m_status = num;
+    if (! conn_ || conn_->response_write_) return;
+    conn_->response_state_ = num;
     size_t size = errmsg.size();
     setContentLength(errmsg.size());
-    m_size = 0;
+    conn_->response_size_ = 0;
     flush();
-    write_len(errmsg.data(), size);
+    writeLen(errmsg.data(), size);
 }
 
 void Response::sendRedirect(const std::string &url) {
-    if (m_write) return;
-    m_status = 302;
+    if (! conn_ || conn_->response_write_) return;
+    conn_->response_state_ = 302;
     setContentLength(0);
-    m_size = 0;
+    conn_->response_size_ = 0;
     setHeader("Location", url);
     flush();
 }
 
 void Response::addCookie(const Cookie &cookie) {
-    if (!m_write) m_cookies.insert(cookie);
+    if (conn_ && !conn_->response_write_) conn_->response_cookies_.insert(cookie);
 }
 
 const Cookie *Response::getCookie(const std::string &name, const std::string &domain) const {
-    for (auto iter = m_cookies.begin(); iter != m_cookies.end(); ++iter) {
+    if (! conn_ || conn_->response_write_) return nullptr;
+    for (auto iter = conn_->response_cookies_.begin(); iter != conn_->response_cookies_.end(); ++iter) {
         if (iter->domain() == domain && iter->name() == name) return &(*iter);
     }
     return nullptr;
 }
 
-std::set<Cookie> &Response::getCookies() {
-    return m_cookies;
+std::set<Cookie> *Response::getCookies() {
+    if (conn_) return &conn_->response_cookies_;
+    return nullptr;
 }
 
 bool Response::addHeader(const std::string &key, const std::string &value) {
-    if (!m_write) return m_headers.insert(std::make_pair(key, value)).second;
-    return false;
+    if (! conn_ || conn_->response_write_) return false;
+    return conn_->response_headers_.insert(std::make_pair(key, value)).second;
 }
 
 void Response::setHeader(const std::string &key, const std::string &value) {
-    if (!m_write) m_headers.insert_or_assign(key, value);
+    if (! conn_ || conn_->response_write_) return;
+    conn_->response_headers_.insert_or_assign(key, value);
 }
 
 std::string *Response::getHeader(const std::string &key) const {
-    auto it = m_headers.find(key);
-    if (it == m_headers.end()) {
+    if (! conn_) return nullptr;
+    auto it = conn_->response_headers_.find(key);
+    if (it == conn_->response_headers_.end()) {
         return nullptr;
     } else {
         return &it->second;
     }
 }
 
-std::map<std::string, std::string, case_insensitive_compare> &Response::getHeaders() {
-    return m_headers;
+std::map<std::string, std::string, case_insensitive_compare> *Response::getHeaders() {
+    if (! conn_) return nullptr;
+    return &conn_->response_headers_;
 }
 
 std::string Response::decimalToHex(int num) const {
@@ -108,49 +96,37 @@ std::string Response::decimalToHex(int num) const {
     return s;
 }
 
-void Response::write_data(const void *buf, const size_t size) {
-    if (size <= 0) return;
-    if (size + m_size > MAX_BUFSIZE) {
+void Response::writeData(const void *buf, const size_t size) {
+    if (! conn_ || size == 0) return;
+    if (size + conn_->response_size_ > HttpConnect::MAX_BUFSIZE) {
         flush();
-        if (m_chunk) {
+        if (conn_->response_chunk_) {
             std::string s = decimalToHex(size).append("\r\n");
-            write_len(s.data(), s.size(), MSG_MORE);
+            writeLen(s.data(), s.size(), MSG_MORE);
         }
-        write_len(buf, size, MSG_MORE);
-        if (m_chunk) write_len("\r\n", 2);
+        writeLen(buf, size, MSG_MORE);
+        if (conn_->response_chunk_) writeLen("\r\n", 2);
     } else {
-        memcpy(m_buf + m_size, buf, size);
-        m_size += size;
+        memcpy(conn_->response_buf_ + conn_->response_size_, buf, size);
+        conn_->response_size_ += size;
     }
 }
 
-void Response::write_data(const std::string &str) {
-    size_t size = str.size();
-    if (size + m_size > MAX_BUFSIZE) {
-        flush();
-        if (m_chunk) {
-            std::string s = decimalToHex(size).append("\r\n");
-            write_len(s.data(), s.size(), MSG_MORE);
-        }
-        write_len(str.data(), size, MSG_MORE);
-        if (m_chunk) write_len("\r\n", 2);
-    } else {
-        memcpy(m_buf + m_size, str.data(), size);
-        m_size += size;
-    }
+void Response::writeData(const std::string &str) {
+    writeData(str.data(), str.size());
 }
 
-void Response::write_len(const void *buf, size_t size, int flags) const {
-    if (m_sd < 0) return;
+void Response::writeLen(const void *buf, size_t size, int flags) const {
+    if (!conn_ || conn_->sd_ < 0) return;
     if (size <= 0) return;
     while (size > 0) {
 #ifdef HTTPS
         (void) flags;
-        if (m_ssl == nullptr) return;
+        if (conn_->ssl_ == nullptr) return;
         size_t len;
-        int ret = SSL_write_ex(m_ssl, buf, size, &len);
+        int ret = SSL_write_ex(conn_->ssl_, buf, size, &len);
         if (ret == 0) {
-            int err = SSL_get_error(m_ssl, ret);
+            int err = SSL_get_error(conn_->ssl_, ret);
             if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
@@ -158,7 +134,7 @@ void Response::write_len(const void *buf, size_t size, int flags) const {
             throw 103;
         }
 #else
-        ssize_t len = send(m_sd, buf, size, flags | MSG_NOSIGNAL);
+        ssize_t len = send(conn_->sd_, buf, size, flags | MSG_NOSIGNAL);
         if (len < 0) throw 103;
 #endif
         if (len > 0) {
@@ -169,69 +145,76 @@ void Response::write_len(const void *buf, size_t size, int flags) const {
     }
 }
 
-void Response::write_file(const std::string &filename) {
-    if (m_sd < 0) return;
+void Response::writeFile(const std::string &filename) {
+    if (!conn_ || conn_->sd_ < 0) return;
     struct stat st;
     if (stat(filename.c_str(), &st) == 0) {
         int fd = open(filename.c_str(), O_RDONLY);
         if (fd != -1) {
             flush();
-            if (m_chunk) {
+            if (conn_->response_chunk_) {
                 std::string buf = decimalToHex(st.st_size).append("\r\n");
-                write_len(buf.data(), buf.size());
+                writeLen(buf.data(), buf.size());
             }
-            sendfile(m_sd, fd, 0, st.st_size);
+            sendfile(conn_->sd_, fd, 0, st.st_size);
             close(fd);
-            if (m_chunk) write_len("\r\n", 2);
+            if (conn_->response_chunk_) writeLen("\r\n", 2);
         }
     }
 }
 
 void Response::flush() {
-    if (!m_write) {
-        m_chunk = false;
+    if (! conn_) return;
+    if (! conn_->response_write_) {
+        conn_->response_chunk_ = false;
         std::string buf = "HTTP/1.1 ";
-        buf.append(std::to_string(m_status)).append("\r\n");
-        m_headers.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
-        for (auto it = m_headers.cbegin(); it != m_headers.cend(); ++it) {
+        if (conn_->response_state_ == 0) {
+            conn_->response_state_ = 200;
+            buf.append("200\r\n");
+        } else {
+            buf.append(std::to_string(conn_->response_state_)).append("\r\n");
+        }
+        conn_->response_headers_.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
+        for (auto it = conn_->response_headers_.cbegin(); it != conn_->response_headers_.cend(); ++it) {
             buf.append(it->first).append(":").append(it->second).append("\r\n");
         }
-        for (auto it = m_cookies.cbegin(); it != m_cookies.cend(); ++it) {
+        for (auto it = conn_->response_cookies_.cbegin(); it != conn_->response_cookies_.cend(); ++it) {
             buf.append("Set-Cookie: ").append(it->to_string()).append("\r\n");
         }
-        if (m_headers.find("content-length") == m_headers.end() && m_keep_alive) {
+        if (conn_->response_headers_.find("content-length") == conn_->response_headers_.end() && conn_->keep_alive_) {
             buf.append("Transfer-Encoding: chunked\r\n");
-            m_chunk = true;
+            conn_->response_chunk_ = true;
         }
         char buff[128] = { '\0' };
         time_t timestamp = time(nullptr);
         std::strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&timestamp));
         buf.append("Date: ").append(buff);
         buf.append("\r\n\r\n");
-        if (m_size > 0) {
-            write_len(buf.data(), buf.size());
+        if (conn_->response_size_ > 0) {
+            writeLen(buf.data(), buf.size());
         } else {
-            write_len(buf.data(), buf.size(), MSG_MORE);
+            writeLen(buf.data(), buf.size(), MSG_MORE);
         }
-        m_write = true;
+        conn_->response_write_ = true;
     }
-    if (m_size > 0) {
-        if (m_chunk) {
-            std::string buf = decimalToHex(m_size).append("\r\n");
-            write_len(buf.data(), buf.size(), MSG_MORE);
+    if (conn_->response_size_ > 0) {
+        if (conn_->response_chunk_) {
+            std::string buf = decimalToHex(conn_->response_size_).append("\r\n");
+            writeLen(buf.data(), buf.size(), MSG_MORE);
         }
-        write_len(m_buf, m_size, MSG_MORE);
-        if (m_chunk) write_len("\r\n", 2);
+        writeLen(conn_->response_buf_, conn_->response_size_, MSG_MORE);
+        if (conn_->response_chunk_) writeLen("\r\n", 2);
     }
-    m_size = 0;
+    conn_->response_size_ = 0;
 }
 
 void Response::setStatus(int status) {
-    m_status = status;
+    if (conn_) conn_->response_state_ = status;
 }
 
 int Response::getStatus() const {
-    return m_status;
+    if (conn_) return conn_->response_state_;
+    return 0;
 }
 
 std::string Response::time_tToHttpDate(time_t timestamp) const {

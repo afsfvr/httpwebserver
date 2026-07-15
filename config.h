@@ -1,10 +1,6 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
 
-#include <string>
-#include <map>
-#include <pthread.h>
-
 #ifndef CASE_INSENSITIVE_COMPARE_STRUCT
 #define CASE_INSENSITIVE_COMPARE_STRUCT
 struct case_insensitive_compare {
@@ -12,7 +8,7 @@ struct case_insensitive_compare {
         return std::lexicographical_compare(a.cbegin(), a.cend(), b.cbegin(), b.cend(), [](const char c1, const char c2){return std::tolower(c1) < std::tolower(c2);});
     }
 };
-#endif
+#endif // CASE_INSENSITIVE_COMPARE_STRUCT
 
 class Config {
 public:
@@ -20,52 +16,58 @@ public:
     Config& operator=(const Config&) = delete;
     static Config* getInstance();
     void parse(int argc, char *argv[]);
-    int getPort() const;
-    int getThreadNum() const;
-    const std::string& getWorkDirectory() const;
-    const std::string& getDaemon() const;
-    int getLogLevel() const;
-    bool isAsyncWriteLog() const;
-    const std::string& getWebappsPath() const;
-    const std::string& getRootUrl() const;
-    const std::string& getRedisIp() const;
-    int getRedisPort() const;
-    const std::string& getRedisName() const;
-    const std::string& getRedisPasswd() const;
-    int getRedisMinIdle() const;
-    int getRedisMaxIdle() const;
-    int getRedisMaxCount() const;
-    const std::map<std::string, std::string, case_insensitive_compare>& getType() const;
-    bool allowIpv4() const;
-    bool allowIpv6() const;
+    int getPort() const { return port_; }
+    int getThreadNum() const { return thread_num_; }
+    const std::string& getWorkDirectory() const { return work_dir_; }
+    bool isDaemon() const { return daemon_; }
+    int getLogLevel() const { return log_level_; }
+    const std::string& getLogFile() const { return log_file_; }
+    const std::string& getWebappsPath() const { return webapps_path_; }
+    const std::string& getRootUrl() const { return root_url_; }
+#ifdef REDIS
+    const std::string& getRedisIp() const { return redis_ip_; }
+    int getRedisPort() const { return redis_port_; }
+    const std::string& getRedisName() const { return redis_name_; }
+    const std::string& getRedisPasswd() const { return redis_passwd_; }
+    int getRedisMinIdle() const { return redis_min_idle_; }
+    int getRedisMaxIdle() const { return redis_max_idle_; }
+    int getRedisMaxCount() const { return redis_max_count_; }
+#endif // REDIS
+    const std::map<std::string, std::string, case_insensitive_compare>& getType() const { return type_; }
+    bool allowIpv4() const { return ipv4_; }
+    bool allowIpv6() const { return ipv6_; }
 #ifdef HTTPS
-    const std::string& getCertPath() const;
-    const std::string& getKeyPath() const;
-#endif
+    const std::string& getCertPath() const { return cert_; }
+    const std::string& getKeyPath() const { return key_; }
+#endif // HTTPS
 private:
     Config();
-    int m_port;
-    int m_thread_num;
-    std::string m_work_dir;
-    std::string m_daemon;
-    int m_log_level;
-    bool m_async_write_log;
-    std::string m_webapps_path;
-    std::string m_root_url;
-    std::string m_redis_ip;
-    int m_redis_port;
-    std::string m_redis_name;
-    std::string m_redis_passwd;
-    int m_redis_min_idle;
-    int m_redis_max_idle;
-    int m_redis_max_count;
-    std::map<std::string, std::string, case_insensitive_compare> m_type;
-    bool m_ipv4;
-    bool m_ipv6;
+    int port_{ 8888 };
+    int thread_num_{ 8 };
+    std::string work_dir_;
+    bool daemon_{ false };
+#ifndef NO_LOG
+    int log_level_{ 2 };
+    std::string log_file_;
+#endif // NO_LOG
+    std::string webapps_path_;
+    std::string root_url_;
+#ifdef REDIS
+    std::string redis_ip_{ "127.0.0.1" };
+    int redis_port_{ 6379 };
+    std::string redis_name_;
+    std::string redis_passwd_;
+    int redis_min_idle_{ 1 };
+    int redis_max_idle_{ 4 };
+    int redis_max_count_{ 8 };
+#endif // REDIS
+    std::map<std::string, std::string, case_insensitive_compare> type_;
+    bool ipv4_{ false };
+    bool ipv6_{ false };
 #ifdef HTTPS
-    std::string m_cert;
-    std::string m_key;
-#endif
+    std::string cert_;
+    std::string key_;
+#endif // HTTPS
 };
 
-#endif
+#endif // CONFIG_H_

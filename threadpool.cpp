@@ -3,10 +3,14 @@
 ThreadPool::ThreadPool(): m_head(nullptr), m_tail(nullptr), m_run(true) {
     m_thread_num = Config::getInstance()->getThreadNum();
     m_threads = new ThreadData[m_thread_num];
+    std::lock_guard lock{ m_mutex };
     for (int i = 0; i < m_thread_num; i++) {
         m_threads[i].ptr = nullptr;
         m_threads[i].del = false;
         m_threads[i].thread = std::thread(&ThreadPool::run, this, &m_threads[i]);
+        char name[32];
+        snprintf(name, sizeof(name), "worker%d", i + 1);
+        pthread_setname_np(m_threads[i].thread.native_handle(), name);
     }
 }
 

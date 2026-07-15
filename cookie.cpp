@@ -1,6 +1,3 @@
-#include <ctime>
-#include <stdexcept>
-
 #include "cookie.h"
 
 Cookie::Cookie(const std::string& name, const std::string& value): m_expires(0), m_http_only(false), m_max_age(-1), m_partitioned(false), m_secure(false) {

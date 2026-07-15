@@ -1,7 +1,5 @@
 #ifdef USE_REDIS
 
-#include <cstring>
-
 #include "redis.h"
 
 Redis::Redis(const char *ip, const int port, const char *username, const char *password) {

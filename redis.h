@@ -1,8 +1,6 @@
 #if ! defined (REDIS_H_) && defined (USE_REDIS)
 #define REDIS_H_
 
-#include <map>
-#include <string>
 #include <hiredis/hiredis.h>
 
 class Redis {

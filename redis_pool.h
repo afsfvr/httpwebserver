@@ -1,9 +1,6 @@
 #if ! defined (REDIS_POOL_H_) && defined (USE_REDIS)
 #define REDIS_POOL_H_
 
-#include <mutex>
-#include <condition_variable>
-
 #include "redis.h"
 class RedisPool;
 class RedisConn {

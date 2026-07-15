@@ -1,9 +1,6 @@
 #if ! defined (SESSION_H_) && defined (USE_REDIS)
 #define SESSION_H_
 
-#include <map>
-#include <string>
-
 class Session {
 public:
     Session(uint64_t sessionId);

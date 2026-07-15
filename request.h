@@ -3,6 +3,7 @@
 
 #include <string>
 #include <map>
+#include <optional>
 
 #ifdef USE_REDIS
 #include "session.h"
@@ -20,47 +21,27 @@ struct case_insensitive_compare {
 };
 #endif
 
+class HttpConnect;
 class Request {
+    Request(const Request &) = delete;
+    Request &operator=(const Request &) = delete;
+
 public:
-    Request(
-#ifdef USE_REDIS
-        uint64_t &sessionId,
-#endif
-#ifdef HTTPS
-        SSL *ssl,
-#endif
-        int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params);
+    Request(HttpConnect *conn);
 #ifdef USE_REDIS
     Session getSession() const;
 #endif
-    Request(const Request &) = delete;
-    Request &operator=(const Request &) = delete;
-    const int &getPort() const;
+    int getPort() const;
     const std::string &getMethod() const;
     const std::string &getUrl() const;
     const std::string &getIp() const;
     const std::map<std::string, std::string, case_insensitive_compare> &getHeaders() const;
     const std::map<std::string, std::string> &getParams() const;
-    const std::string *getHeader(const std::string &key) const;
-    const std::string *getParam(const std::string &key) const;
+    std::optional<std::string> getHeader(const std::string &key) const;
+    std::optional<std::string> getParam(const std::string &key) const;
     size_t read_body(char *dest, size_t len);
 private:
-#ifdef USE_REDIS
-    uint64_t &m_session_id;
-#endif
-#ifdef HTTPS
-    SSL *m_ssl;
-#endif
-    int m_fd;
-    int &m_read_byte;
-    char *m_buf;
-    size_t &m_body_length;
-    int &m_port;
-    std::string &m_method;
-    std::string &m_url;
-    std::string &m_ip;
-    std::map<std::string, std::string, case_insensitive_compare> &m_headers;
-    std::map<std::string, std::string> &m_params;
+    HttpConnect *conn_;
 };
 
 #endif

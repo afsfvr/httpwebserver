@@ -31,18 +31,28 @@ endif(CMAKE_CONFIGURATION_TYPES)
 file(GLOB SRC *.cpp)
 add_executable(${PROJECT_NAME} ${SRC})
 
-if(NOT LOG)
+if(LOG)
+    include(FetchContent)
+    set(SPDLOG_BUILD_PIC ON)
+    FetchContent_Declare(
+        spdlog
+        GIT_REPOSITORY https://github.com/gabime/spdlog.git
+        GIT_TAG 79524ddd08a4ec981b7fea76afd08ee05f83755d # 1.17.0
+        )
+    FetchContent_MakeAvailable(spdlog)
+    target_link_libraries(${PROJECT_NAME} PRIVATE spdlog)
+else()
     target_compile_definitions(${PROJECT_NAME} PRIVATE NO_LOG)
-endif(NOT LOG)
+endif(LOG)
 if(REDIS)
     target_compile_definitions(${PROJECT_NAME} PRIVATE USE_REDIS)
     find_library(HIREDIS_LIB hiredis)
-    target_link_libraries(${PROJECT_NAME} ${HIREDIS_LIB})
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${HIREDIS_LIB})
 endif(REDIS)
 if(HTTPS)
     target_compile_definitions(${PROJECT_NAME} PRIVATE HTTPS)
     find_package(OpenSSL REQUIRED)
-    target_link_libraries(${PROJECT_NAME} OpenSSL::SSL OpenSSL::Crypto)
+    target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif(HTTPS)
 if(NGINX)
     target_compile_options(${PROJECT_NAME} PRIVATE USE_NGINX)
@@ -52,6 +62,11 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     $<$<CONFIG:Release>:RELEASE;NDEBUG>
     $<$<CONFIG:RelWithDebInfo>:RELEASE;NDEBUG>
     $<$<CONFIG:MinSizeRel>:RELEASE;NDEBUG>
+    PROJECT_NAME="${PROJECT_NAME}"
+    PROJECT_VERSION="${PROJECT_VERSION}"
+    PROJECT_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    PROJECT_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    PROJECT_VERSION_PATCH=${PROJECT_VERSION_PATCH}
 )
 
 target_compile_options(${PROJECT_NAME} PRIVATE
@@ -70,11 +85,13 @@ target_compile_options(${PROJECT_NAME} PRIVATE
     >
 )
 
-target_link_libraries(${PROJECT_NAME} pthread dl)
+target_link_libraries(${PROJECT_NAME} PRIVATE pthread dl)
 
 target_link_options(${PROJECT_NAME} PRIVATE
     -rdynamic
 )
+
+target_precompile_headers(${PROJECT_NAME} PRIVATE precompiled.h)
 
 if(BUILD_WEBAPPS)
     add_subdirectory(webapps/root)
