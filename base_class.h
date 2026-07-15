@@ -1,11 +1,6 @@
 #ifndef BASE_CLASS_H_
 #define BASE_CLASS_H_
 
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <cstring>
-
 #include "request.h"
 #include "response.h"
 
@@ -30,34 +25,37 @@ std::string BaseClass::doGet(Request *request, Response *response, const std::st
 }
 
 void BaseClass::doHead(Request *request, Response *response, const std::string &cur_path) {
-    bool res_write = false, res_chunk = false;
-    int res_state = 200;
-    size_t res_size = 0;
-    bool keep_alive = true;
-    std::map<std::string, std::string, case_insensitive_compare> res_headers(response->getHeaders());
-    std::set<Cookie> res_cookies;
-    int fd = open("/dev/null", O_RDWR);
-    Response resp(res_write, res_chunk, res_state, res_size, fd, keep_alive, res_headers, res_cookies
-#ifdef HTTPS
-        , nullptr
-#endif
-    );
-    std::string filename = this->doGet(request, &resp, cur_path);
-    if (!res_write) {
-        if (filename.length() == 0) {
-            res_headers.emplace("Content-Length", std::to_string(res_size));
-        } else {
-            struct stat st;
-            if (stat(filename.c_str(), &st) != -1 && S_ISREG(st.st_mode)) {
-                res_headers.emplace("Content-Length", std::to_string(st.st_size));
-            } else {
-                res_state = 404;
-            }
-        }
-    }
-    close(fd);
-    response->setStatus(res_state);
-    response->getHeaders() = res_headers;
+    (void) request;
+    (void) cur_path;
+    response->sendError(405, "<h1>405</h1>");
+    /* bool res_write = false, res_chunk = false; */
+    /* int res_state = 200; */
+    /* size_t res_size = 0; */
+    /* bool keep_alive = true; */
+    /* std::map<std::string, std::string, case_insensitive_compare> res_headers(response->getHeaders()); */
+    /* std::set<Cookie> res_cookies; */
+    /* int fd = open("/dev/null", O_RDWR); */
+    /* Response resp(res_write, res_chunk, res_state, res_size, fd, keep_alive, res_headers, res_cookies */
+/* #ifdef HTTPS */
+    /*     , nullptr */
+/* #endif */
+    /* ); */
+    /* std::string filename = this->doGet(request, &resp, cur_path); */
+    /* if (!res_write) { */
+    /*     if (filename.length() == 0) { */
+    /*         res_headers.emplace("Content-Length", std::to_string(res_size)); */
+    /*     } else { */
+    /*         struct stat st; */
+    /*         if (stat(filename.c_str(), &st) != -1 && S_ISREG(st.st_mode)) { */
+    /*             res_headers.emplace("Content-Length", std::to_string(st.st_size)); */
+    /*         } else { */
+    /*             res_state = 404; */
+    /*         } */
+    /*     } */
+    /* } */
+    /* close(fd); */
+    /* response->setStatus(res_state); */
+    /* response->getHeaders() = res_headers; */
 }
 
 void BaseClass::doPost(Request *request, Response *response, const std::string &cur_path) {

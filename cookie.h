@@ -1,8 +1,6 @@
 #ifndef COOKIE_H_
 #define COOKIE_H_
 
-#include <string>
-
 class Cookie {
     public:
         enum SameSite {

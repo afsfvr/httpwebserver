@@ -8,8 +8,10 @@
 #include <random>
 #include <iomanip>
 
+#include <spdlog/spdlog.h>
+#include <spdlog/fmt/ranges.h>
+
 #include "../../base_class.h"
-#include "../../log.h"
 
 extern std::string encoding;
 
@@ -61,7 +63,7 @@ std::string Root::doGet(Request *request, Response *response, const std::string 
         path = cur_path + "resources";
         if (! fileExists(path)) {
             if (mkdir(path.c_str(), 0755) == -1) {
-                LOG_WARN("创建文件夹 %s 失败: %s", path.c_str(), strerror(errno));
+                SPDLOG_WARN("创建文件夹 {} 失败: {}", path, strerror(errno));
                 response->sendError(404, "<h1>文件不存在</h1>");
                 return {};
             }
@@ -69,14 +71,14 @@ std::string Root::doGet(Request *request, Response *response, const std::string 
     } else {
         path = cur_path + "resources" + path;
         if (! fileExists(path)) {
-            LOG_INFO("路径%s不存在", path.c_str());
+            SPDLOG_INFO("路径{}不存在", path);
             response->sendError(404, "<h1>文件不存在</h1>");
             return {};
         }
     }
 
     if (isFile(path)) {
-        response->addHeader("Content-Disposition", makeContentDisposition(url.substr(url.find_last_of('/') + 1)));
+        response->setHeader("Content-Disposition", makeContentDisposition(url.substr(url.find_last_of('/') + 1)));
         return path;
     }
 
@@ -125,7 +127,7 @@ std::string Root::doGet(Request *request, Response *response, const std::string 
 
     replaceAll(html, "{{BACK_LINK}}", backLink);
     replaceAll(html, "{{FILE_LIST}}", fileList);
-    response->write_data(html);
+    response->writeData(html);
     return {};
 }
 
@@ -139,61 +141,66 @@ void Root::doPost(Request *request, Response *response, const std::string &cur_p
     if (path.size() == 0 || path.front() != '/') path.insert(path.begin(), '/');
     path = cur_path + "resources" + path;
 
-    const std::string *type = request->getHeader("content-type");
-    if (type == nullptr || type->find("multipart/form-data") == std::string::npos || type->find("boundary=") == std::string::npos) {
+    std::optional<std::string> type = request->getHeader("content-type");
+    if (! type) {
         response->sendError(403, "非法请求");
     } else {
-        std::string boundary = type->substr(type->find("boundary=") + 9);
-        std::string endboundary = "\r\n--" + boundary;
-        char buf[4096];
-        int len = 0;
-        int offset = 0;
-        int fd = -1;
-        int num = 0, success = 0;
-        std::string filename;
-        try {
-            while ((len = request->read_body(buf + offset, 4095 - offset)) > 0 || offset > 0) {
-                int bufsize = -1;
-                if (len > 0) {
-                    offset += len;
-                } else {
-                    bufsize = offset;
-                }
-                buf[offset] = '\0';
-                if (fd == -1) {
-                    filename.clear();
-                    char *data = buf;
-                    filename = getfilename(path, data, boundary);
-                    if (filename.length() > 0) {
-                        ++ num;
-                        fd = open(filename.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
-                        offset = offset - (data - buf);
-                        memmove(buf, data, offset);
-                        if (fd < 0) {
-                            LOG_WARN("创建文件%s失败: %s", filename.c_str(), strerror(errno));
+        const std::string &typeValue = type.value();
+        if (typeValue.find("multipart/form-data") == std::string::npos || typeValue.find("boundary=") == std::string::npos) {
+            response->sendError(403, "非法请求");
+        } else {
+            std::string boundary = typeValue.substr(type->find("boundary=") + 9);
+            std::string endboundary = "\r\n--" + boundary;
+            char buf[4096];
+            int len = 0;
+            int offset = 0;
+            int fd = -1;
+            int num = 0, success = 0;
+            std::string filename;
+            try {
+                while ((len = request->read_body(buf + offset, 4095 - offset)) > 0 || offset > 0) {
+                    int bufsize = -1;
+                    if (len > 0) {
+                        offset += len;
+                    } else {
+                        bufsize = offset;
+                    }
+                    buf[offset] = '\0';
+                    if (fd == -1) {
+                        filename.clear();
+                        char *data = buf;
+                        filename = getfilename(path, data, boundary);
+                        if (filename.length() > 0) {
+                            ++ num;
+                            fd = open(filename.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
+                            offset = offset - (data - buf);
+                            memmove(buf, data, offset);
+                            if (fd < 0) {
+                                SPDLOG_WARN("创建文件{}失败: {}", filename, strerror(errno));
+                            }
+                        } else if (offset >= 4000) {
+                            offset = 0;
                         }
-                    } else if (offset >= 4000) {
-                        offset = 0;
+                    } else {
+                        if (writeData(fd, buf, offset, filename, endboundary)) {
+                            ++ success;
+                        }
                     }
-                } else {
-                    if (writeData(fd, buf, offset, filename, endboundary)) {
-                        ++ success;
+                    if (bufsize == offset) { // 没有收到数据且处理后大小无变化
+                        break;
                     }
                 }
-                if (bufsize == offset) { // 没有收到数据且处理后大小无变化
-                    break;
+            } catch (int i) {
+                SPDLOG_WARN("throw error: {} {}", i, strerror(errno));
+            }
+            if (fd != -1) {
+                close(fd);
+                if (filename.size() != 0) {
+                    remove(filename.c_str());
                 }
             }
-        } catch (int i) {
-            LOG_WARN("throw error: %d %s", i, strerror(errno));
+            response->writeData("<script>alert(\"共计接收到" + std::to_string(num) + "个文件，上传成功" + std::to_string(success) + "个文件\");window.location.href=\"" + request->getUrl() + "\"</script>");
         }
-        if (fd != -1) {
-            close(fd);
-            if (filename.size() != 0) {
-                remove(filename.c_str());
-            }
-        }
-    response->write_data("<script>alert(\"共计接收到" + std::to_string(num) + "个文件，上传成功" + std::to_string(success) + "个文件\");window.location.href=\"" + request->getUrl() + "\"</script>");
     }
 }
 
@@ -211,9 +218,9 @@ void Root::doDelete(Request *request, Response *response, const std::string &cur
         return;
     }
     if (remove(path.c_str()) == 0) {
-        response->write_data("删除成功");
+        response->writeData("删除成功");
     } else {
-        response->write_data(strerror(errno));
+        response->writeData(strerror(errno));
     }
 }
 
@@ -225,7 +232,7 @@ void Root::service(Request *request, Response *response, const std::string &cur_
     if (validate(request)) {
         BaseClass::service(request, response, cur_path, filename);
     } else {
-        response->addHeader("WWW-Authenticate", "Basic realm=\"upload\"");
+        response->setHeader("WWW-Authenticate", "Basic realm=\"upload\"");
         response->sendError(401, "<h1>401</h1>");
     }
 }
@@ -234,11 +241,12 @@ Root::~Root() {
 }
 
 bool Root::validate(Request *request) const {
-    const std::string *authValue = request->getHeader("Authorization");
-    if (authValue == nullptr) return false;
-    if (strncasecmp("basic ", authValue->c_str(), 6) != 0) return false;
-    std::string base64 = base64Decode(authValue->c_str() + 6, authValue->size() - 6);
-    LOG_INFO("base64=%s decode=%s", authValue->c_str() + 6, base64.c_str());
+    std::optional<std::string> auth = request->getHeader("Authorization");
+    if (! auth) return false;
+    const std::string &authValue = auth.value();
+    if (strncasecmp("basic ", authValue.c_str(), 6) != 0) return false;
+    std::string base64 = base64Decode(authValue.c_str() + 6, authValue.size() - 6);
+    SPDLOG_DEBUG("base64={} decode={}", authValue.c_str() + 6, base64);
     size_t index = base64.find(':');
     if (index == std::string::npos) return false;
     std::string username = base64.substr(0, index);

@@ -1,7 +1,5 @@
 #ifdef USE_REDIS
 
-#include <thread>
-
 #include "log.h"
 #include "redis_pool.h"
 
@@ -87,14 +85,14 @@ RedisPool::RedisPool(int minIdle, int maxIdle, int maxCount, const char *url, co
         } catch (const std::string &e) {
             m_redis[i] = nullptr;
             m_idle[i] = false;
-            LOG_WARN("redis[%d]创建失败:%s", i, e.c_str());
+            SPDLOG_WARN("redis[{}]创建失败:{}", i, e);
             if (i >= 10 && m_use_count == 0) break;
         }
     }
     if (m_idle_count == 0 && m_min_idle > m_idle_count) {
-        LOG_ERROR("redis全部创建失败");
+        SPDLOG_ERROR("redis全部创建失败");
     } else {
-        LOG_INFO("成功创建%d个redis连接", m_use_count);
+        SPDLOG_INFO("成功创建{}个redis连接", m_use_count);
     }
 }
 
@@ -130,7 +128,7 @@ RedisConn RedisPool::get() {
     if (m_redis == nullptr) return { nullptr, nullptr };
     if (m_idle_count <= 0) adjustPool();
     if (m_use_count == 0) {
-        LOG_ERROR("没有可用的redis连接,redis全部连接失败");
+        SPDLOG_ERROR("没有可用的redis连接,redis全部连接失败");
         return { nullptr, nullptr };
     }
     std::unique_lock<std::mutex> lock(m_mutex);
@@ -143,7 +141,7 @@ RedisConn RedisPool::get() {
                 try {
                     m_redis[i] = new Redis(m_url, m_port, m_username, m_password);
                 } catch (const std::string &e) {
-                    LOG_WARN("redis连接失败:%s", e.c_str());
+                    SPDLOG_WARN("redis连接失败:{}", e);
                     m_redis[i] = nullptr;
                     --m_use_count;
                 }
@@ -188,7 +186,7 @@ void RedisPool::adjustPool() {
                 redis = new Redis(m_url, m_port, m_username, m_password);
             } catch (const std::string &e) {
                 redis = nullptr;
-                LOG_WARN("redis连接失败:%s", e.c_str());
+                SPDLOG_WARN("redis连接失败:{}", e);
                 return;
             }
             m_mutex.lock();

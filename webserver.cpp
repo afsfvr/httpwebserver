@@ -1,19 +1,11 @@
-#include <fcntl.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <sys/epoll.h>
-#include <netinet/ip.h>
-#include <unistd.h>
-#include <fstream>
-#include <cstring>
-#include <string>
+#ifdef HTTPS
 #include <openssl/err.h>
 #include <openssl/crypto.h>
+#endif
 
 #include "http_connect.h"
 #include "config.h"
 #include "webserver.h"
-#include "log.h"
 
 static const unsigned int MAX_EVENT = 60000;
 
@@ -26,7 +18,7 @@ WebServer::WebServer():
     m_ctx = SSL_CTX_new(TLS_server_method());
     if (!m_ctx) {
         int err = ERR_get_error();
-        if (err) LOG_ERROR("SSL_CTX对象创建失败: %s", ERR_error_string(err, nullptr));
+        if (err) SPDLOG_ERROR("SSL_CTX对象创建失败: {}", ERR_error_string(err, nullptr));
         exit(1);
     }
 
@@ -36,20 +28,20 @@ WebServer::WebServer():
     /* if (SSL_CTX_use_certificate_file(m_ctx, Config::getInstance()->getCertPath().c_str(), SSL_FILETYPE_PEM) <= 0) { // 加载服务器证书 */
     if (SSL_CTX_use_certificate_chain_file(m_ctx, Config::getInstance()->getCertPath().c_str()) <= 0) { // 加载服务器证书和证书链
         int err = ERR_get_error();
-        if (err) LOG_ERROR("服务器证书错误: %s %s", Config::getInstance()->getCertPath().c_str(), ERR_error_string(err, nullptr));
+        if (err) SPDLOG_ERROR("服务器证书错误: {} {}", Config::getInstance()->getCertPath(), ERR_error_string(err, nullptr));
         ERR_print_errors_fp(stderr);
         exit(1);
     }
 
     if (SSL_CTX_use_PrivateKey_file(m_ctx, Config::getInstance()->getKeyPath().c_str(), SSL_FILETYPE_PEM) <= 0) {
         int err = ERR_get_error();
-        if (err) LOG_ERROR("服务器证书私钥错误: %s %s", Config::getInstance()->getKeyPath().c_str(), ERR_error_string(err, nullptr));
+        if (err) SPDLOG_ERROR("服务器证书私钥错误: {} {}", Config::getInstance()->getKeyPath(), ERR_error_string(err, nullptr));
         ERR_print_errors_fp(stderr);
         exit(1);
     }
 
     if (!SSL_CTX_check_private_key(m_ctx)) {
-        LOG_ERROR("证书和私钥不匹配");
+        SPDLOG_ERROR("证书和私钥不匹配");
         ERR_print_errors_fp(stderr);
         exit(1);
     }
@@ -59,25 +51,25 @@ WebServer::WebServer():
     {
 #endif
     if (getrlimit(RLIMIT_OFILE, &m_limit) < 0) {
-        LOG_ERROR("getrlimit:%s", strerror(errno));
+        SPDLOG_ERROR("getrlimit: {}", strerror(errno));
         exit(1);
     }
     struct rlimit l;
     l.rlim_cur = std::max((unsigned int) m_limit.rlim_cur, MAX_EVENT);
     l.rlim_max = std::max((unsigned int) m_limit.rlim_max, MAX_EVENT);
     if (setrlimit(RLIMIT_OFILE, &l) < 0) {
-        LOG_ERROR("setrlimit:%s", strerror(errno));
+        SPDLOG_ERROR("setrlimit: {}", strerror(errno));
         exit(1);
     }
-    LOG_INFO("最多可存在%u个文件描述符", l.rlim_cur);
+    SPDLOG_INFO("最多可存在{}个文件描述符", l.rlim_cur);
     if ((m_listenfd = socket(Config::getInstance()->allowIpv6() ? PF_INET6 : PF_INET, SOCK_STREAM, 0)) < 0) {
-        LOG_ERROR("socket:%s", strerror(errno));
+        SPDLOG_ERROR("socket: {}", strerror(errno));
         exit(1);
     }
 
     int val = 1;
     if (setsockopt(m_listenfd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val)) < 0) {
-        LOG_WARN("setsockopt SO_REUSEADDR:%s", strerror(errno));
+        SPDLOG_WARN("setsockopt SO_REUSEADDR: {}", strerror(errno));
     }
 
     sockaddr_storage addr{};
@@ -86,12 +78,12 @@ WebServer::WebServer():
         val = Config::getInstance()->allowIpv4() ? 0 : 1;
         int ret = setsockopt(m_listenfd, IPPROTO_IPV6, IPV6_V6ONLY, &val, sizeof(val));
         if (ret < 0) {
-            LOG_WARN("setsockopt IPV6_V6ONLY:%s", strerror(errno));
+            SPDLOG_WARN("setsockopt IPV6_V6ONLY: {}", strerror(errno));
         }
         if (ret == 0 && val == 0) {
-            LOG_INFO("同时允许ipv4和ipv6连接");
+            SPDLOG_INFO("同时允许ipv4和ipv6连接");
         } else {
-            LOG_INFO("仅允许ipv6连接");
+            SPDLOG_INFO("仅允许ipv6连接");
         }
         sockaddr_in6 *address = reinterpret_cast<sockaddr_in6 *>(&addr);
         address->sin6_family = AF_INET6;
@@ -104,38 +96,38 @@ WebServer::WebServer():
         address->sin_port = htons(Config::getInstance()->getPort());
         inet_pton(AF_INET, "0.0.0.0", &address->sin_addr);
         addr_len = sizeof(*address);
-        LOG_INFO("仅允许ipv4连接");
+        SPDLOG_INFO("仅允许ipv4连接");
     }
     if (bind(m_listenfd, reinterpret_cast<sockaddr *>(&addr), addr_len) < 0) {
         close(m_listenfd);
-        LOG_ERROR("bind %d: %s", Config::getInstance()->getPort(), strerror(errno));
+        SPDLOG_ERROR("bind {}: {}", Config::getInstance()->getPort(), strerror(errno));
         exit(1);
     }
     getsockname(m_listenfd, reinterpret_cast<sockaddr *>(&addr), &addr_len);
     if (Config::getInstance()->allowIpv6()) {
         sockaddr_in6 *address = reinterpret_cast<sockaddr_in6 *>(&addr);
-        LOG_INFO("监听端口为：%d", ntohs(address->sin6_port));
+        SPDLOG_INFO("监听端口为：{}", ntohs(address->sin6_port));
     } else {
         sockaddr_in *address = reinterpret_cast<sockaddr_in *>(&addr);
-        LOG_INFO("监听端口为：%d", ntohs(address->sin_port));
+        SPDLOG_INFO("监听端口为：{}", ntohs(address->sin_port));
     }
 
     if (listen(m_listenfd, SOMAXCONN) < 0) {
         close(m_listenfd);
-        LOG_ERROR("listen:%s", strerror(errno));
+        SPDLOG_ERROR("listen: {}", strerror(errno));
         exit(1);
     }
 
     if (pipe(m_pipe) < 0) {
         close(m_listenfd);
-        LOG_ERROR("pipe:%s", strerror(errno));
+        SPDLOG_ERROR("pipe: {}", strerror(errno));
         exit(1);
     }
     setnonblock(m_pipe[0]);
 
     if ((m_epollfd = epoll_create1(EPOLL_CLOEXEC)) < 0) {
         close(m_listenfd);
-        LOG_ERROR("epoll_create:%s", strerror(errno));
+        SPDLOG_ERROR("epoll_create: {}", strerror(errno));
         exit(1);
     }
 
@@ -173,7 +165,7 @@ void WebServer::eventLoop() {
     while (m_run) {
         int count = epoll_wait(m_epollfd, events, MAX_EVENT, -1);
         if (count < 0) {
-            if (errno != EINTR) { LOG_WARN("epoll_wait:%s", strerror(errno)); }
+            if (errno != EINTR) { SPDLOG_WARN("epoll_wait: {}", strerror(errno)); }
             continue;
         }
         for (int i = 0; i < count; i++) {
@@ -183,12 +175,13 @@ void WebServer::eventLoop() {
             } else if (fd == m_pipe[0]) {
                 handlePipeEvent();
             } else {
+                uint32_t ev = events[i].events;
                 HttpConnect *conn = reinterpret_cast<HttpConnect *>(events[i].data.ptr);
-                if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
-                    LOG_DEBUG("收到事件%d,删除文件描述符%d", events[i].events, static_cast<int>(*conn));
+                if (ev & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
+                    SPDLOG_DEBUG("收到事件{},删除文件描述符{}", ev, static_cast<int>(*conn));
                     bool ret = m_pool->cancelAndDeleteJob(conn);
                     if (! ret) delete conn;
-                } else if (events[i].events & (EPOLLIN | EPOLLOUT)) {
+                } else if (ev & (EPOLLIN | EPOLLOUT)) {
                     m_pool->addJob(conn);
                 }
             }
@@ -208,14 +201,14 @@ void WebServer::add_connect_v4() {
     socklen_t addr_len = sizeof(address);
     int sd = accept(m_listenfd, reinterpret_cast<sockaddr *>(&address), &addr_len);
     if (sd < 0) {
-        LOG_ERROR("accept:%s", strerror(errno));
+        SPDLOG_ERROR("accept:{}", strerror(errno));
         return;
     }
-    LOG_DEBUG("收到新连接,sd = %d", sd);
+    SPDLOG_DEBUG("收到新连接,sd = {}", sd);
     char ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &address.sin_addr, ip, INET_ADDRSTRLEN);
     if (inBlackList(ip)) {
-        LOG_DEBUG("ip %s 在黑名单内，关闭连接", ip);
+        SPDLOG_DEBUG("ip {} 在黑名单内，关闭连接", ip);
         close(sd);
         return;
     }
@@ -233,14 +226,14 @@ void WebServer::add_connect_v6() {
     socklen_t addr_len = sizeof(address);
     int sd = accept(m_listenfd, reinterpret_cast<sockaddr *>(&address), &addr_len);
     if (sd < 0) {
-        LOG_ERROR("accept:%s", strerror(errno));
+        SPDLOG_ERROR("accept: {}", strerror(errno));
         return;
     }
-    LOG_DEBUG("收到新连接,sd = %d", sd);
+    SPDLOG_DEBUG("收到新连接,sd = {}", sd);
     char ip[INET6_ADDRSTRLEN];
     inet_ntop(AF_INET6, &address.sin6_addr, ip, INET6_ADDRSTRLEN);
     if (inBlackList(ip)) {
-        LOG_DEBUG("ip %s 在黑名单内，关闭连接", ip);
+        SPDLOG_DEBUG("ip {} 在黑名单内，关闭连接", ip);
         close(sd);
         return;
     }
@@ -258,10 +251,10 @@ void WebServer::add_connect_v4_v6() {
     socklen_t addr_len = sizeof(address);
     int sd = accept(m_listenfd, reinterpret_cast<sockaddr *>(&address), &addr_len);
     if (sd < 0) {
-        LOG_ERROR("accept:%s", strerror(errno));
+        SPDLOG_ERROR("accept: {}", strerror(errno));
         return;
     }
-    LOG_DEBUG("收到新连接,sd = %d", sd);
+    SPDLOG_DEBUG("收到新连接,sd = {}", sd);
     char ip[INET6_ADDRSTRLEN];
     if (IN6_IS_ADDR_V4MAPPED(&address.sin6_addr)) {
         struct in_addr ipv4addr;
@@ -271,7 +264,7 @@ void WebServer::add_connect_v4_v6() {
         inet_ntop(AF_INET6, &address.sin6_addr, ip, INET6_ADDRSTRLEN);
     }
     if (inBlackList(ip)) {
-        LOG_DEBUG("ip %s 在黑名单内，关闭连接", ip);
+        SPDLOG_DEBUG("ip {} 在黑名单内，关闭连接", ip);
         close(sd);
         return;
     }
@@ -305,15 +298,15 @@ void WebServer::handlePipeEvent() {
         } else if (len == -1 && errno == EINTR) {
             continue;
         } else if (len == 0) {
-            LOG_WARN("管道被关闭");
+            SPDLOG_WARN("管道被关闭");
             return;
         } else {
-            LOG_WARN("从管道读取出错: %s", strerror(errno));
+            SPDLOG_WARN("从管道读取出错: {}", strerror(errno));
             return;
         }
     }
 
-    LOG_DEBUG("管道收到数据，共计%d字节", m_pipeBuf.size());
+    SPDLOG_DEBUG("管道收到数据，共计{}字节", m_pipeBuf.size());
     size_t offset = 0;
     while (true) {
         auto size = m_pipeBuf.size() - offset;
@@ -329,17 +322,17 @@ void WebServer::handlePipeEvent() {
         switch (type) {
         case 1: {
             std::string ip{ data, length };
-            LOG_DEBUG("添加黑名单: %s", ip.c_str());
+            SPDLOG_DEBUG("添加黑名单: {}", ip);
             addBlackList(ip);
             break;
         }
         case 2: {
             if (length != sizeof(HttpConnect *)) {
-                LOG_ERROR("删除文件描述符时长度错误，预期: %d， 实际: %d", sizeof(HttpConnect *), length);
+                SPDLOG_ERROR("删除文件描述符时长度错误，预期: {}， 实际: {}", sizeof(HttpConnect *), length);
             } else {
                 HttpConnect *conn = nullptr;
                 memcpy(&conn, data, sizeof(HttpConnect *));
-                LOG_DEBUG("管道删除文件描述符 %d", (int) *conn);
+                SPDLOG_DEBUG("管道删除文件描述符 {}", (int) *conn);
                 bool ret = m_pool->cancelAndDeleteJob(conn);
                 if (! ret) delete conn;
             }
@@ -377,7 +370,7 @@ void WebServer::loadBlackList() {
     m_blackList.clear();
     std::ifstream fin(m_blackListFile);
     if (!fin.is_open()) {
-        LOG_WARN("无法打开黑名单文件%s: %s", m_blackListFile.c_str(), std::strerror(errno));
+        SPDLOG_WARN("无法打开黑名单文件{}: {}", m_blackListFile, std::strerror(errno));
         return;
     }
 
@@ -388,14 +381,14 @@ void WebServer::loadBlackList() {
             m_blackList.insert(ip);
         }
     }
-    LOG_DEBUG("加载黑名单完成，共计%d个ip", m_blackList.size());
+    SPDLOG_DEBUG("加载黑名单完成，共计{}个ip", m_blackList.size());
     fin.close();
 }
 
 void WebServer::saveBlackList() {
     std::ofstream fout(m_blackListFile, std::ofstream::out | std::ofstream::trunc);
     if (!fout.is_open()) {
-        LOG_WARN("无法写入黑名单文件%s: %s", m_blackListFile.c_str(), std::strerror(errno));
+        SPDLOG_WARN("无法写入黑名单文件{}: {}", m_blackListFile, std::strerror(errno));
         return;
     }
 
@@ -403,7 +396,7 @@ void WebServer::saveBlackList() {
         fout << ip << "\n";
     }
     fout.close();
-    LOG_DEBUG("保存黑名单完成，共计%d个ip", m_blackList.size());
+    SPDLOG_DEBUG("保存黑名单完成，共计{}个ip", m_blackList.size());
 }
 
 bool WebServer::inBlackList(const std::string & ip) {

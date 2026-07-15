@@ -1,12 +1,9 @@
 #ifndef WEBSERVER_H_
 #define WEBSERVER_H_
 
-#include <sys/resource.h>
-#include <map>
-#include <unordered_set>
-#include <functional>
-#include <vector>
+#ifdef HTTPS
 #include <openssl/ssl.h>
+#endif
 
 #include "threadpool.h"
 #include "http_connect.h"

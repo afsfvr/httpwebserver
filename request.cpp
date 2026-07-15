@@ -1,99 +1,96 @@
-#include <cstring>
-#include <thread>
-#include <sys/socket.h>
-
 #include "request.h"
+#include "http_connect.h"
 
-Request::Request(
-#ifdef USE_REDIS
-    uint64_t &sessionId,
-#endif
-#ifdef HTTPS
-    SSL *ssl,
-#endif
-    int fd, int &read_byte, char *buf, size_t &body_len, int &port, std::string &method, std::string &url, std::string &ip, std::map<std::string, std::string, case_insensitive_compare> &headers, std::map<std::string, std::string> &params):
-#ifdef USE_REDIS
-    m_session_id(sessionId),
-#endif
-#ifdef HTTPS
-    m_ssl(ssl),
-#endif
-    m_fd(fd), m_read_byte(read_byte), m_buf(buf), m_body_length(body_len), m_port(port), m_method(method), m_url(url), m_ip(ip), m_headers(headers), m_params(params) {}
+Request::Request(HttpConnect *conn): conn_{conn} {}
 
 #ifdef USE_REDIS
 Session Request::getSession() const {
-    return m_session_id;
+    if (conn_) return conn_->session_id_;
+    return {};
 }
 #endif
 
-const int &Request::getPort() const {
-    return m_port;
+int Request::getPort() const {
+    if (conn_) return conn_->port_;
+    return 0;
 }
 
 const std::string &Request::getMethod() const {
-    return m_method;
+    static const std::string empty;
+    if (conn_) return conn_->method_;
+    return empty;
 }
 
 const std::string &Request::getUrl() const {
-    return m_url;
+    static const std::string empty;
+    if (conn_) return conn_->url_;
+    return empty;
 }
 
 const std::string &Request::getIp() const {
-    return m_ip;
+    static const std::string empty;
+    if (conn_) return conn_->ip_;
+    return empty;
 }
 
 const std::map<std::string, std::string, case_insensitive_compare> &Request::getHeaders() const {
-    return m_headers;
+    static const std::map<std::string, std::string, case_insensitive_compare> empty;
+    if (conn_) return conn_->request_headers_;
+    return empty;
 }
 
 const std::map<std::string, std::string> &Request::getParams() const {
-    return m_params;
+    static const std::map<std::string, std::string> empty;
+    if (conn_) return conn_->request_params_;
+    return empty;
 }
 
-const std::string *Request::getHeader(const std::string &key) const {
-    auto it = m_headers.find(key);
-    if (it == m_headers.end()) {
-        return nullptr;
-    } else {
-        return &it->second;
+std::optional<std::string> Request::getHeader(const std::string &key) const {
+    if (conn_) {
+        auto it = conn_->request_headers_.find(key);
+        if (it != conn_->request_headers_.end()) {
+            return it->second;
+        }
     }
+    return std::nullopt;
 }
 
-const std::string *Request::getParam(const std::string &key) const {
-    auto it = m_params.find(key);
-    if (it == m_params.end()) {
-        return nullptr;
-    } else {
-        return &it->second;
+std::optional<std::string> Request::getParam(const std::string &key) const {
+    if (conn_) {
+        auto it = conn_->request_params_.find(key);
+        if (it != conn_->request_params_.end()) {
+            return it->second;
+        }
     }
+    return std::nullopt;
 }
 
 size_t Request::read_body(char *dest, size_t len) {
-    if (len <= 0 || m_body_length <= 0) return 0;
+    if (len <= 0 || conn_ == nullptr || conn_->request_body_length_ <= 0) return 0;
     size_t size = 0;
-    if (m_read_byte > 0) {
-        m_read_byte = std::min(static_cast<size_t>(m_read_byte), m_body_length);
-        if (m_read_byte > static_cast<int>(len)) {
-            memcpy(dest, m_buf, len);
-            memmove(m_buf, m_buf + len, m_read_byte - len);
-            m_read_byte -= len;
-            m_body_length -= len;
+    if (conn_->request_read_byte_ > 0) {
+        conn_->request_read_byte_ = std::min(static_cast<size_t>(conn_->request_read_byte_), conn_->request_body_length_);
+        if (conn_->request_read_byte_ > static_cast<int>(len)) {
+            memcpy(dest, conn_->request_buf_, len);
+            memmove(conn_->request_buf_, conn_->request_buf_ + len, conn_->request_read_byte_ - len);
+            conn_->request_read_byte_ -= len;
+            conn_->request_body_length_ -= len;
             return len;
         } else {
-            memcpy(dest, m_buf, m_read_byte);
-            size += m_read_byte;
-            len -= m_read_byte;
-            m_body_length -= m_read_byte;
-            m_read_byte = 0;
+            memcpy(dest, conn_->request_buf_, conn_->request_read_byte_);
+            size += conn_->request_read_byte_;
+            len -= conn_->request_read_byte_;
+            conn_->request_body_length_ -= conn_->request_read_byte_;
+            conn_->request_read_byte_ = 0;
         }
     }
-    size_t min = std::min(len, m_body_length);
+    size_t min = std::min(len, conn_->request_body_length_);
     while (min > 0) {
 #ifdef HTTPS
         size_t tmp;
-        int ret = SSL_read_ex(m_ssl, dest + size, min, &tmp);
+        int ret = SSL_read_ex(conn_->ssl_, dest + size, min, &tmp);
         if (ret == 0) {
-            int err = SSL_get_error(m_ssl, ret);
+            int err = SSL_get_error(conn_->ssl_, ret);
             if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
@@ -101,13 +98,13 @@ size_t Request::read_body(char *dest, size_t len) {
             throw 2;
         }
 #else
-        ssize_t tmp = recv(m_fd, dest + size, min, 0);
+        ssize_t tmp = recv(conn_->sd_, dest + size, min, 0);
         if (tmp < 0) throw 2;
 #endif
         if (tmp == 0) throw 1;
         size += tmp;
         min -= tmp;
-        m_body_length -= tmp;
+        conn_->request_body_length_ -= tmp;
     }
     return size;
 }

@@ -1,19 +1,4 @@
-#include <sys/epoll.h>
-#include <dlfcn.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
-#include <sys/uio.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <iostream>
-#include <cstring>
-#include <ctime>
-#include <algorithm>
-#include <thread>
-
 #include "base_class.h"
-#include "log.h"
 #include "config.h"
 #include "http_connect.h"
 
@@ -44,51 +29,43 @@ HttpConnect::HttpConnect(const int &epollfd, const int &pipe,
 #ifdef HTTPS
         SSL *ssl,
 #endif
-        const int &sd, const std::string &ip, const int &port): epollfd(epollfd), m_pipe(pipe), m_sd(sd), m_ip(ip), m_port(port), request(
-#ifdef USE_REDIS
-        res_session_id,
-#endif
+        const int &sd, const std::string &ip, const int &port): epollfd_{epollfd}, pipe_{pipe}, sd_{sd}, ip_{ip}, port_{port},
 #ifdef HTTPS
-        ssl,
+        ssl_{ssl},
 #endif
-        m_sd, m_read_byte, m_buf, m_body_len, m_port, m_method, m_url, m_ip, headers, params), response(res_write, res_chunk, res_state, res_size, sd, m_keep_alive, res_headers, res_cookies
-#ifdef HTTPS
-        , ssl) ,m_ssl(ssl)
-#else
-    )
-#endif
-{
+    request_{this}, response_{this} {
     srand(time(nullptr));
-    setnonblock(m_sd);
-    m_file_data = nullptr;
-    m_keep_alive = true;
+    setnonblock(sd_);
+    response_file_ptr_ = nullptr;
+    keep_alive_ = true;
     init();
 #ifdef HTTPS
-    m_handshake = false;
+    handshake_ = false;
 #endif
     struct epoll_event ev;
     ev.data.ptr = this;
     ev.events = EPOLLIN | EPOLLRDHUP | EPOLLET | EPOLLONESHOT;
-    epoll_ctl(epollfd, EPOLL_CTL_ADD, m_sd, &ev);
+    epoll_ctl(epollfd_, EPOLL_CTL_ADD, sd_, &ev);
 }
 
 HttpConnect::~HttpConnect() {
 #ifdef HTTPS
-    if (m_ssl) {
-        int ret = SSL_shutdown(m_ssl);
-        if (ret == 0) SSL_shutdown(m_ssl);
-        SSL_free(m_ssl);
+    if (ssl_) {
+        int ret = SSL_shutdown(ssl_);
+        if (ret == 0) SSL_shutdown(ssl_);
+        SSL_free(ssl_);
+        ssl_ = nullptr;
     }
 #endif
-    shutdown(m_sd, SHUT_RDWR);
-    m_state = STATE::CLOSE;
-    epoll_ctl(epollfd, EPOLL_CTL_DEL, m_sd, nullptr);
-    if (m_file_data != nullptr) {
-        munmap(m_file_data, m_file_length);
-        m_file_data = nullptr;
+    shutdown(sd_, SHUT_RDWR);
+    state_ = STATE::CLOSE;
+    epoll_ctl(epollfd_, EPOLL_CTL_DEL, sd_, nullptr);
+    if (response_file_ptr_ != nullptr) {
+        munmap(response_file_ptr_, response_file_length_);
+        response_file_ptr_ = nullptr;
     }
-    close(m_sd);
-    m_sd = -1;
+    close(sd_);
+    sd_ = -1;
 }
 
 unsigned char HttpConnect::toHex(unsigned char x) const {
@@ -116,43 +93,43 @@ void HttpConnect::modfd(int ev) {
     struct epoll_event event;
     event.data.ptr = this;
     event.events = ev | EPOLLET | EPOLLRDHUP | EPOLLONESHOT;
-    epoll_ctl(epollfd, EPOLL_CTL_MOD, m_sd, &event);
+    epoll_ctl(epollfd_, EPOLL_CTL_MOD, sd_, &event);
 }
 
 void HttpConnect::init() {
-    if (m_file_data != nullptr) {
-        munmap(m_file_data, m_file_length);
-        m_file_data = nullptr;
+    if (response_file_ptr_ != nullptr) {
+        munmap(response_file_ptr_, response_file_length_);
+        response_file_ptr_ = nullptr;
     }
-    if (! m_keep_alive) {
-        LOG_DEBUG("keep-alive=false,关闭socket=%d", m_sd);
+    if (! keep_alive_) {
+        SPDLOG_DEBUG("keep-alive=false,关闭socket={}", sd_);
         throw 4;
     }
-    m_keep_alive = false;
-    memset(m_buf, '\0', MAX_BUFSIZE);
-    m_read_byte = 0;
-    headers.clear();
-    params.clear();
-    m_state = STATE::READ;
-    m_method.clear();
-    m_url.clear();
-    m_send_byte = 0;
-    m_have_byte = 0;
-    m_file_length = 0;
-    m_body_len = 0;
-    m_send_head.clear();
-    m_dynamic_lib_file.clear();
-    response_state = 0;
-    res_write = false;
-    res_chunk = false;
-    res_state = 200;
-    res_size = 0;
-    res_headers.clear();
-    res_cookies.clear();
-    res_headers.emplace("Content-Encoding", "identity");
-    res_headers.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
+    keep_alive_ = false;
+    memset(request_buf_, '\0', MAX_BUFSIZE);
+    request_read_byte_ = 0;
+    request_headers_.clear();
+    request_params_.clear();
+    state_ = STATE::READ;
+    method_.clear();
+    url_.clear();
+    response_send_byte_ = 0;
+    response_have_byte_ = 0;
+    response_file_length_ = 0;
+    request_body_length_ = 0;
+    response_send_head_.clear();
+    lib_file_.clear();
+    response_write_ = false;
+    response_chunk_ = false;
+    response_state_ = 0;
+    response_size_ = 0;
+    response_headers_.clear();
+    response_cookies_.clear();
+    forward_.clear();
+    response_headers_.emplace("Content-Encoding", "identity");
+    response_headers_.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
 #ifdef HTTPS
-    res_headers.emplace("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+    response_headers_.emplace("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
 #endif
 }
 
@@ -170,67 +147,67 @@ int HttpConnect::setnonblock(const int &fd) {
     return old_option;
 }
 
-void HttpConnect::read_data() {
-    if (m_read_byte == MAX_BUFSIZE) {
-        m_buf[m_read_byte - 1] = '\0';
-        auto iter = headers.find("connection");
-        if (iter != headers.end()) headers.erase(iter);
-        if (m_url.empty()) {
+void HttpConnect::readData() {
+    if (request_read_byte_ == MAX_BUFSIZE) {
+        request_buf_[request_read_byte_ - 1] = '\0';
+        auto iter = request_headers_.find("connection");
+        if (iter != request_headers_.end()) request_headers_.erase(iter);
+        if (url_.empty()) {
             setResponseState(414, "<h1>414</h1>");
-            LOG_WARN("请求URI过大，超过缓冲区大小:%s", m_buf);
+            SPDLOG_WARN("请求URI过大，超过缓冲区大小:{}", request_buf_);
         } else {
             setResponseState(431, "<h1>431</h1>");
-            LOG_WARN("单行请求头过大，超过缓冲区大小:%s", m_buf);
+            SPDLOG_WARN("单行请求头过大，超过缓冲区大小:{}", request_buf_);
         }
-        m_state = STATE::WRITE;
+        state_ = STATE::WRITE;
         setCookie();
         modfd(EPOLLOUT);
         return;
     }
-    while (m_read_byte < MAX_BUFSIZE) {
+    while (request_read_byte_ < MAX_BUFSIZE) {
 #ifdef HTTPS
         size_t len;
-        int ret = SSL_read_ex(m_ssl, m_buf + m_read_byte, MAX_BUFSIZE - m_read_byte, &len);
+        int ret = SSL_read_ex(ssl_, request_buf_ + request_read_byte_, MAX_BUFSIZE - request_read_byte_, &len);
         if (ret == 0) {
-            int err = SSL_get_error(m_ssl, ret);
+            int err = SSL_get_error(ssl_, ret);
             if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) break;
             if (err == SSL_ERROR_ZERO_RETURN) throw 101;
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                LOG_ERROR("sd:%d, ssl: %d, recv error: %s", m_sd, err, strerror(errno));
+                SPDLOG_ERROR("sd:{}, ssl: {}, recv error: {}", sd_, err, strerror(errno));
                 throw 101;
             }
             break;
         }
 #else
-        ssize_t len = recv(m_sd, m_buf + m_read_byte, MAX_BUFSIZE - m_read_byte, 0);
+        ssize_t len = recv(sd_, request_buf_ + request_read_byte_, MAX_BUFSIZE - request_read_byte_, 0);
         if (len == 0) throw 1;
         if (len == -1) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                LOG_ERROR("sd:%d,recv:%s", m_sd, strerror(errno));
+                SPDLOG_ERROR("sd:{},recv:{}", sd_, strerror(errno));
                 throw 101;
             }
             break;
         }
 #endif
-        m_read_byte += len;
+        request_read_byte_ += len;
     }
     parse();
 }
 
 void HttpConnect::parse() {
-    char *str = m_buf;
+    char *str = request_buf_;
     char *s = strstr(str, "\r\n");
-    while (s != nullptr && m_read_byte > 0) {
+    while (s != nullptr && request_read_byte_ > 0) {
         *s++ = '\0';
         *s++ = '\0';
         size_t len = strlen(str) + 2;
-        m_read_byte -= len;
-        if (m_url.empty()) {
-            parse_line(str);
+        request_read_byte_ -= len;
+        if (url_.empty()) {
+            parseLine(str);
         } else {
-            parse_head(str);
+            parseHead(str);
         }
-        if (m_state == STATE::WRITE) {
+        if (state_ == STATE::WRITE) {
             setCookie();
             str = s;
             break;
@@ -238,26 +215,35 @@ void HttpConnect::parse() {
         str = s;
         s = strstr(str, "\r\n");
     }
-    memmove(m_buf, str, m_read_byte);
-    memset(m_buf + m_read_byte, 0, MAX_BUFSIZE - m_read_byte);
-    if (m_state == STATE::WRITE) {
+    memmove(request_buf_, str, request_read_byte_);
+    memset(request_buf_ + request_read_byte_, 0, MAX_BUFSIZE - request_read_byte_);
+    if (state_ == STATE::WRITE) {
+        auto iter = request_headers_.find("X-Forwarded-For");
+        if (iter != request_headers_.end()) {
+            std::stringstream ss{iter->second};
+            std::string item;
+
+            while (std::getline(ss, item, ',')) {
+                forward_.push_back(trim(item));
+            }
+        }
         modfd(EPOLLOUT);
     } else {
         modfd(EPOLLIN);
     }
 }
 
-void HttpConnect::parse_line(char *data) {
+void HttpConnect::parseLine(char *data) {
 #ifdef USE_NGINX
-    LOG_INFO("socket:%d request:%s", m_sd, data);
+    SPDLOG_INFO("socket:{} request:{}", sd_, data);
 #else
-    LOG_INFO("socket:%d request:%s, ip: %s, port: %d", m_sd, data, m_ip.c_str(), m_port);
+    SPDLOG_INFO("socket:{} request:{}, ip: {}, port: {}", sd_, data, ip_, port_);
 #endif
     char *url = strpbrk(data, " \t");
     if (url == nullptr) {
-        m_state = STATE::WRITE;
+        state_ = STATE::WRITE;
         setResponseState(400, "<h1>400</h1>");
-        LOG_ERROR("解析url出错: nullptr, data: %s", data);
+        SPDLOG_ERROR("解析url出错: nullptr, data: {}", data);
         return;
     }
     *url++ = '\0';
@@ -265,90 +251,90 @@ void HttpConnect::parse_line(char *data) {
         if (data[i] >= 'a' && data[i] <= 'z')
             data[i] = data[i] - 32;
     }
-    m_method = data;
+    method_ = data;
     data = url;
     char *http_version = strpbrk(url, " \t");
     if (http_version == nullptr) {
-        m_state = STATE::WRITE;
+        state_ = STATE::WRITE;
         setResponseState(400, "<h1>400</h1>");
-        LOG_ERROR("解析http version出错: nullptr, data: %s", data);
+        SPDLOG_ERROR("解析http version出错: nullptr, data: {}", data);
         return;
     }
     *http_version++ = '\0';
     data = strchr(url, '?');
     if (data != nullptr) {
         *data++ = '\0';
-        parse_param(data);
+        parseParam(data);
     }
-    m_url = urlDecode(url);
-    size_t index = m_url.find_first_not_of('/');
+    url_ = urlDecode(url);
+    size_t index = url_.find_first_not_of('/');
     if (index == std::string::npos) {
-        m_url = Config::getInstance()->getRootUrl();
+        url_ = Config::getInstance()->getRootUrl();
     } else {
-        size_t index2 = m_url.find_first_of('/', index);
+        size_t index2 = url_.find_first_of('/', index);
         std::string path = Config::getInstance()->getWebappsPath();
         if (index2 == std::string::npos) {
-            path.append(m_url.substr(index));
+            path.append(url_.substr(index));
         } else {
-            path.append(m_url.substr(index, (index2 - index)));
+            path.append(url_.substr(index, (index2 - index)));
         }
         path.append("/libmain.so");
         if (access(path.c_str(), F_OK) == -1) {
-            m_url.erase(0, 1);
-            m_url.insert(0, Config::getInstance()->getRootUrl());
+            url_.erase(0, 1);
+            url_.insert(0, Config::getInstance()->getRootUrl());
         }
     }
 }
 
-void HttpConnect::parse_head(char *data) {
+void HttpConnect::parseHead(char *data) {
     data += strspn(data, " ");
     char *value = strchr(data, ':');
     if (value == nullptr) {
-        m_state = STATE::WRITE;
+        state_ = STATE::WRITE;
         if (data[0] != '\0') {
             setResponseState(400, "<h1>400</h1>");
-            LOG_ERROR("解析请求头出错, 未找到':', data: %s", data);
+            SPDLOG_ERROR("解析请求头出错, 未找到':', data: {}", data);
         }
         return;
     }
     *value++ = '\0';
     value += strspn(value, " ");
-    headers.emplace(data, value);
+    request_headers_.emplace(data, value);
 #ifdef USE_NGINX
     if (strncasecmp("x-real-", data, 7) == 0) {
         if (strncasecmp("ip", data + 7, 2) == 0) {
-            m_ip = value;
+            ip_ = value;
         } else if (strncasecmp("port", data + 7, 4) == 0) {
-            m_port = atoi(value);
+            port_ = atoi(value);
         }
     }
 #endif
 }
 
-void HttpConnect::parse_param(char *data) {
+void HttpConnect::parseParam(char *data) {
     char *param = data;
     while ((param = strchr(data, '&')) != nullptr) {
         *param++ = '\0';
         char *value = strchr(data, '=');
         if (value != nullptr) {
             *value++ = '\0';
-            params.emplace(urlDecode(data), urlDecode(value));
+            request_params_.emplace(urlDecode(data), urlDecode(value));
         } else {
-            LOG_WARN("请求参数%s未包含=", data);
+            SPDLOG_WARN("请求参数{}未包含=", data);
         }
         data = param;
     }
     char *value = strchr(data, '=');
     if (value != nullptr) {
         *value++ = '\0';
-        params.emplace(urlDecode(data), urlDecode(value));
+        request_params_.emplace(urlDecode(data), urlDecode(value));
     } else {
-        LOG_WARN("请求参数%s未包含=", data);
+        SPDLOG_WARN("请求参数{}未包含=", data);
     }
 }
 
 HttpConnect::operator int() {
-    return m_sd;
+    return sd_;
 }
 
 bool HttpConnect::operator==(const Task *task) {
@@ -356,25 +342,25 @@ bool HttpConnect::operator==(const Task *task) {
         return true;
     }
     const HttpConnect *p = dynamic_cast<const HttpConnect*>(task);
-    return p != nullptr && this->m_sd == p->m_sd;
+    return p != nullptr && this->sd_ == p->sd_;
 }
 
 void HttpConnect::run() {
     try {
 #ifdef HTTPS
-        if (! m_handshake) {
+        if (! handshake_) {
             handshake();
             return;
         }
 #endif
-        if (m_state == STATE::READ) {
-            read_data();
-        } else if (m_state == STATE::WRITE) {
-            write_data();
+        if (state_ == STATE::READ) {
+            readData();
+        } else if (state_ == STATE::WRITE) {
+            writeData();
         }
     } catch (int i) {
-        LOG_DEBUG("抛出了异常: %d", i);
-        m_state = STATE::CLOSE;
+        SPDLOG_DEBUG("抛出了异常: {}", i);
+        state_ = STATE::CLOSE;
         HttpConnect *conn = this;
         uint8_t data[2];
         data[0] = 0x02; // type
@@ -384,69 +370,68 @@ void HttpConnect::run() {
         iov[0].iov_len = sizeof(data);
         iov[1].iov_base = &conn;
         iov[1].iov_len = sizeof(HttpConnect*);
-        ssize_t ret = writev(m_pipe, iov, 2);
+        ssize_t ret = writev(pipe_, iov, 2);
         (void)ret;
     }
 }
 
-void HttpConnect::write_data() {
-    init_write_lib();
-    if (! m_dynamic_lib_file.empty()) {
-        setblock(m_sd);
+void HttpConnect::writeData() {
+    initWriteLib();
+    if (! lib_file_.empty()) {
+        setblock(sd_);
         try {
-            bool ret = run_dynamic_lib();
-            setnonblock(m_sd);
+            bool ret = runDynamicLib();
+            setnonblock(sd_);
             if (! ret) {
                 setResponseState(500, "<h1>500</h1>");
-                LOG_DEBUG("socket:%d,运行动态库错误", m_sd);
+                SPDLOG_DEBUG("socket:{},运行动态库错误", sd_);
             }
             // 处理请求体
-            if (m_body_len > 1024 * 1024) { // 未处理请求体大于1M直接关闭连接
+            if (request_body_length_ > 1024 * 1024) { // 未处理请求体大于1M直接关闭连接
                 throw 4;
-            } else if (m_body_len > 0) {
+            } else if (request_body_length_ > 0) {
                 char tmp[1024];
-                while (m_body_len > 0) {
-                    size_t min = std::min(1024ul, m_body_len);
+                while (request_body_length_ > 0) {
+                    size_t min = std::min(1024ul, request_body_length_);
 #ifdef HTTPS
                     size_t len;
-                    int ret = SSL_read_ex(m_ssl, tmp, min, &len);
+                    int ret = SSL_read_ex(ssl_, tmp, min, &len);
                     if (ret == 0) throw 4;
 #else
-                    ssize_t len;
-                    len = recv(m_sd, tmp, min, 0);
+                    ssize_t len = recv(sd_, tmp, min, 0);
                     if (len == 0) throw 1;
                     if (len == -1) throw 4;
 #endif
-                    m_body_len -= len;
+                    request_body_length_ -= len;
                 }
             }
         } catch (int ex) {
-            setnonblock(m_sd);
+            setnonblock(sd_);
             throw ex;
         }
     }
 
-    if (! write_head()) return;
+    if (! writeHead()) return;
     while (true) {
-        if (m_have_byte == 0) {
+        if (response_have_byte_ == 0) {
             init();
             modfd(EPOLLIN);
             return;
         }
-        const char *data = m_file_data;
+        const char *data = response_file_ptr_;
         if (data == nullptr) {
-            data = response.m_buf;
+            data = response_buf_;
         }
 #ifdef HTTPS
         size_t len;
-        int ret = SSL_write_ex(m_ssl, data + m_send_byte, m_have_byte, &len);
+        int ret = SSL_write_ex(ssl_, data + response_send_byte_, response_have_byte_, &len);
         if (ret == 0) {
-            int err = SSL_get_error(m_ssl, ret);
+            int err = SSL_get_error(ssl_, ret);
             if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
                 modfd(EPOLLOUT);
                 return;
             } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                LOG_ERROR("sd:%d, ssl: %d send: %s", m_sd, err, strerror(errno));
+                SPDLOG_ERROR("sd:{}, ssl: {} send: {}", sd_, err, strerror(errno));
                 throw 103;
             } else {
                 modfd(EPOLLOUT);
@@ -454,11 +439,11 @@ void HttpConnect::write_data() {
             }
         }
 #else
-        ssize_t len = send(m_sd, data + m_send_byte, m_have_byte, MSG_NOSIGNAL);
+        ssize_t len = send(sd_, data + response_send_byte_, response_have_byte_, MSG_NOSIGNAL);
         if (len == 0) throw 3;
         if (len < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                LOG_ERROR("sd:%d,send:%s", m_sd, strerror(errno));
+                SPDLOG_ERROR("sd:{},send:{}", sd_, strerror(errno));
                 throw 103;
             } else {
                 modfd(EPOLLOUT);
@@ -466,22 +451,22 @@ void HttpConnect::write_data() {
             }
         }
 #endif
-        m_send_byte += len;
-        m_have_byte -= len;
+        response_send_byte_ += len;
+        response_have_byte_ -= len;
     }
 }
 
-bool HttpConnect::write_head() {
-    while (! m_send_head.empty()) {
+bool HttpConnect::writeHead() {
+    while (! response_send_head_.empty()) {
 #ifdef HTTPS
         size_t len;
-        int ret = SSL_write_ex(m_ssl, m_send_head.c_str(), m_send_head.size(), &len);
+        int ret = SSL_write_ex(ssl_, response_send_head_.c_str(), response_send_head_.size(), &len);
         if (ret == 0) {
-            int err = SSL_get_error(m_ssl, ret);
+            int err = SSL_get_error(ssl_, ret);
             if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
                 modfd(EPOLLOUT);
             } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                LOG_ERROR("sd:%d, ssl: %d, send head: %s", m_sd, err, strerror(errno));
+                SPDLOG_ERROR("sd:{}, ssl: {}, send head: {}", sd_, err, strerror(errno));
                 throw 102;
             } else {
                 modfd(EPOLLOUT);
@@ -489,11 +474,11 @@ bool HttpConnect::write_head() {
             return false;
         }
 #else
-        ssize_t len = send(m_sd, m_send_head.c_str(), m_send_head.size(), MSG_NOSIGNAL);
+        ssize_t len = send(sd_, response_send_head_.c_str(), response_send_head_.size(), MSG_NOSIGNAL);
         if (len == 0) throw 2;
         if (len < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                LOG_ERROR("sd:%d,send head:%s", m_sd, strerror(errno));
+                SPDLOG_ERROR("sd:{},send head:{}", sd_, strerror(errno));
                 throw 102;
             } else {
                 modfd(EPOLLOUT);
@@ -501,21 +486,21 @@ bool HttpConnect::write_head() {
             return false;
         }
 #endif
-        m_send_head.erase(0, len);
+        response_send_head_.erase(0, len);
     }
     return true;
 }
 
-void HttpConnect::init_write_lib() {
-    if (response_state != 0) {
+void HttpConnect::initWriteLib() {
+    if (response_state_ != 0) {
         return;
     }
-    int i1 = -1, i2 = m_url.size();
-    for (size_t i = 0; i < m_url.size(); i++) {
+    int i1 = -1, i2 = url_.size();
+    for (size_t i = 0; i < url_.size(); i++) {
         if (i1 == -1) {
-            if (m_url[i] != '/') i1 = i;
+            if (url_[i] != '/') i1 = i;
         } else {
-            if (m_url[i] == '/') {
+            if (url_[i] == '/') {
                 i2 = i;
                 break;
             }
@@ -523,24 +508,24 @@ void HttpConnect::init_write_lib() {
     }
     if (i1 == -1 || i2 == 0) {
         setResponseState(400, "<h1>400</h1>");
-        LOG_DEBUG("socket:%d,解析动态库路径错误, url: %s", m_sd, m_url.c_str());
+        SPDLOG_DEBUG("socket:{},解析动态库路径错误, url: {}", sd_, url_);
         return;
     }
     Config *config = Config::getInstance();
-    m_dynamic_lib_file = config->getWebappsPath();
-    m_dynamic_lib_file.append(m_url.substr(i1, i2 - i1)).append("/libmain.so");
-    if (! isFile(m_dynamic_lib_file)) {
-        LOG_DEBUG("动态库路径错误:%s", m_dynamic_lib_file.c_str());
-        m_dynamic_lib_file.clear();
+    lib_file_ = config->getWebappsPath();
+    lib_file_.append(url_.substr(i1, i2 - i1)).append("/libmain.so");
+    if (! isFile(lib_file_)) {
+        SPDLOG_DEBUG("动态库路径错误:{}", lib_file_);
+        lib_file_.clear();
         setResponseState(404, "<h1>404</h1>");
     }
 }
 
-void HttpConnect::init_write_file(const std::string &filename) {
-    if (response_state != 0) {
+void HttpConnect::initWriteFile(const std::string &filename) {
+    if (response_state_ != 0) {
         return;
     }
-    LOG_DEBUG("init write file: %s", filename.c_str());
+    SPDLOG_DEBUG("init write file: {}", filename);
     struct stat st;
     if (stat(filename.c_str(), &st) == -1 || S_ISDIR(st.st_mode)) {
         setResponseState(404, "<h1>404</h1>");
@@ -548,32 +533,32 @@ void HttpConnect::init_write_file(const std::string &filename) {
     }
     char timebuf[32] = {'\0'};
     std::strftime(timebuf, sizeof(timebuf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&st.st_mtim.tv_sec));
-    res_headers.insert_or_assign("Last-Modified", timebuf);
-    auto iter = headers.find("If-Modified-Since");
-    if (iter != headers.end() && iter->second == timebuf) {
+    response_headers_.insert_or_assign("Last-Modified", timebuf);
+    auto iter = request_headers_.find("If-Modified-Since");
+    if (iter != request_headers_.end() && iter->second == timebuf) {
         setResponseState(304);
         return;
     }
     if (st.st_size == 0) {
-        res_headers.insert_or_assign("Content-Length", "0");
+        response_headers_.insert_or_assign("Content-Length", "0");
         setResponseState(200);
         return;
     }
 
     if (! (st.st_mode & S_IROTH)) { // 不可读
-        LOG_WARN("%s不可读", filename.c_str());
+        SPDLOG_WARN("{}不可读", filename);
         setResponseState(403, "<h1>403</h1>");
     } else {
         int fd = open(filename.c_str(), O_RDONLY);
         if (fd < 0) {
-            LOG_ERROR("打开文件%s失败%s", filename.c_str(), strerror(errno));
+            SPDLOG_ERROR("打开文件{}失败{}", filename, strerror(errno));
             setResponseState(500, "<h1>500</h1>");
             return;
         }
-        m_file_data = (char*)mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+        response_file_ptr_ = (char*)mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
         close(fd);
-        if (reinterpret_cast<void*>(m_file_data) == reinterpret_cast<void*>(-1)) {
-            LOG_ERROR("mmap失败%s", strerror(errno));
+        if (reinterpret_cast<void*>(response_file_ptr_) == reinterpret_cast<void*>(-1)) {
+            SPDLOG_ERROR("mmap失败{}", strerror(errno));
             setResponseState(500, "<h1>500</h1>");
             return;
         }
@@ -583,23 +568,23 @@ void HttpConnect::init_write_file(const std::string &filename) {
         if (index != std::string::npos) {
             auto citer = type.find(filename.substr(index + 1));
             if (citer != type.cend()) {
-                res_headers.insert_or_assign("Content-Type", citer->second);
+                response_headers_.emplace("Content-Type", citer->second);
             } else {
-                res_headers.insert_or_assign("Content-Type", type.find("other")->second);
+                response_headers_.emplace("Content-Type", type.find("other")->second);
             }
         } else {
-            res_headers.insert_or_assign("Content-Type", type.find("other")->second);
+            response_headers_.emplace("Content-Type", type.find("other")->second);
         }
-        auto ret = res_headers.emplace("Accept-Ranges", "bytes");
-        m_send_byte = 0;
-        m_file_length = st.st_size;
-        m_have_byte = st.st_size;
+        auto ret = response_headers_.emplace("Accept-Ranges", "bytes");
+        response_send_byte_ = 0;
+        response_file_length_ = st.st_size;
+        response_have_byte_ = st.st_size;
 
-        auto iter = headers.find("range");
-        if (ret.first->second == "bytes" && iter != headers.end()) {
+        auto iter = request_headers_.find("range");
+        if (ret.first->second == "bytes" && iter != request_headers_.end()) {
             std::string str = iter->second;
             size_t index1 = str.find('='), index2 = str.find('-');
-            size_t i1 = 0, i2 = m_file_length;
+            size_t i1 = 0, i2 = response_file_length_;
             if (index1 != std::string::npos && index2 != std::string::npos) {
                 try{
                     if (index1 + 1 != index2) {
@@ -610,26 +595,26 @@ void HttpConnect::init_write_file(const std::string &filename) {
                     }
                 } catch (const std::exception &e) {
                     i1 = 0;
-                    i2 = m_file_length;
+                    i2 = response_file_length_;
                 }
             }
-            if (i2 >= m_file_length) i2--;
+            if (i2 >= response_file_length_) i2--;
             if (i1 <= i2) {
                 std::string value = "bytes ";
-                value.append(std::to_string(i1)).append("-").append(std::to_string(i2)).append("/").append(std::to_string(m_file_length));
-                res_headers.insert_or_assign("Content-Range", value);
-                m_send_byte = i1;
-                m_have_byte = i2 - i1 + 1;
-                res_headers.insert_or_assign("Content-Length", std::to_string(m_have_byte));
+                value.append(std::to_string(i1)).append("-").append(std::to_string(i2)).append("/").append(std::to_string(response_file_length_));
+                response_headers_.insert_or_assign("Content-Range", value);
+                response_send_byte_ = i1;
+                response_have_byte_ = i2 - i1 + 1;
+                response_headers_.insert_or_assign("Content-Length", std::to_string(response_have_byte_));
                 setResponseState(206);
             } else {
                 setResponseState(416, "<h1>416</h1>");
-                LOG_DEBUG("sd: %d, range请求的范围错误: %s", m_sd, str.c_str());
+                SPDLOG_DEBUG("sd: {}, range请求的范围错误: {}", sd_, str);
                 return;
             }
         }
-        if (response_state == 0) {
-            res_headers.insert_or_assign("Content-Length", std::to_string(m_have_byte));
+        if (response_state_ == 0) {
+            response_headers_.insert_or_assign("Content-Length", std::to_string(response_have_byte_));
             setResponseState(200);
         }
     }
@@ -641,8 +626,8 @@ void HttpConnect::setCookie() {
     if (pool == nullptr) return;
     RedisConn redis = pool->get();
     if (! redis) return;
-    auto iter = headers.find("cookie");
-    if (iter == headers.end()) {
+    auto iter = request_headers_.find("cookie");
+    if (iter == request_headers_.end()) {
         uint64_t u;
         while (true) {
             u = ((static_cast<uint64_t>(time(nullptr)) & 0xffffffff) << 32) | rand();
@@ -650,8 +635,8 @@ void HttpConnect::setCookie() {
             if (! redis->live()) return;
         }
         res_session_id = u;
-        res_headers.emplace("set-cookie", "session=" + std::to_string(u) + ";path=/;");
-        LOG_INFO("url:%s添加cookie:%s", m_url.c_str(), res_headers.find("set-cookie")->second.c_str());
+        response_headers_.emplace("set-cookie", "session=" + std::to_string(u) + ";path=/;");
+        SPDLOG_INFO("url:{}添加cookie:{}", url_, response_headers_.find("set-cookie")->second);
     } else {
         std::string s = iter->second;
         size_t index = s.find("session");
@@ -661,7 +646,7 @@ void HttpConnect::setCookie() {
             if (index != std::string::npos) s = s.substr(index + 1, index1 - index - 1);
         }
         if (index == std::string::npos || s.empty()) {
-            LOG_WARN("cookie错误:%s", s.c_str());
+            SPDLOG_WARN("cookie错误: {}", s);
             uint64_t u;
             while (true) {
                 u = ((static_cast<uint64_t>(time(nullptr)) & 0xffffffff) << 32) | rand();
@@ -669,7 +654,7 @@ void HttpConnect::setCookie() {
                 if (! redis->live()) return;
             }
             res_session_id = u;
-            res_headers.emplace("set-cookie", "session=" + std::to_string(u) + ";path=/;");
+            response_headers_.emplace("set-cookie", "session=" + std::to_string(u) + ";path=/;");
         } else {
             try {
                 uint64_t session = std::stoull(s);
@@ -683,9 +668,9 @@ void HttpConnect::setCookie() {
                     if (redis->saveSession(u)) break;
                     if (! redis->live()) return;
                 }
-                LOG_WARN("cookie %s错误:%s", iter->second.c_str(), e.what());
+                SPDLOG_WARN("cookie {}错误: {}", iter->second, e.what());
                 res_session_id = u;
-                res_headers.emplace("set-cookie", "session=" + std::to_string(u) + ";path=/;");
+                response_headers_.emplace("set-cookie", "session=" + std::to_string(u) + ";path=/;");
             }
         }
     }
@@ -693,99 +678,100 @@ void HttpConnect::setCookie() {
 }
 
 void HttpConnect::setResponseState(int s, const char *str) {
-    auto iter = headers.find("connection");
-    if (iter != headers.end() && (iter->second[0] == 'K' || iter->second[0] == 'k')) {
-        m_keep_alive = true;
-        res_headers.emplace("Connection", "keep-alive");
+    auto iter = request_headers_.find("connection");
+    if (iter != request_headers_.end() && (iter->second[0] == 'K' || iter->second[0] == 'k')) {
+        keep_alive_ = true;
+        response_headers_.emplace("Connection", "keep-alive");
     }
     char buf[64] = {'\0'};
     time_t timestamp = time(nullptr);
     std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&timestamp));
-    res_headers.emplace("Date", buf);
-    response_state = s;
-    m_send_head = "HTTP/1.1 ";
-    m_send_head.append(std::to_string(s)).append("\r\n");
-    if (str != nullptr) res_headers.erase("content-length");
-    for (auto it = res_headers.cbegin(); it != res_headers.cend(); it++) {
-        m_send_head.append(it->first).append(":").append(it->second).append("\r\n");
+    response_headers_.emplace("Date", buf);
+    response_state_ = s;
+    response_send_head_ = "HTTP/1.1 ";
+    response_send_head_.append(std::to_string(s)).append("\r\n");
+    if (str != nullptr) response_headers_.erase("content-length");
+    for (auto it = response_headers_.cbegin(); it != response_headers_.cend(); it++) {
+        response_send_head_.append(it->first).append(":").append(it->second).append("\r\n");
     }
-    for (auto it = res_cookies.cbegin(); it != res_cookies.cend(); ++it) {
-        m_send_head.append("Set-Cookie: ").append(it->to_string()).append("\r\n");
+    for (auto it = response_cookies_.cbegin(); it != response_cookies_.cend(); ++it) {
+        response_send_head_.append("Set-Cookie: ").append(it->to_string()).append("\r\n");
     }
-    LOG_INFO("socket:%d response:%s", m_sd, m_send_head.c_str());
+    SPDLOG_TRACE("socket:{} response:{}", sd_, response_send_head_);
     if (str != nullptr) {
-        m_send_head.append("Content-Length: ").append(std::to_string(strlen(str))).append("\r\n\r\n").append(str);
-        m_have_byte = 0;
+        response_send_head_.append("Content-Length: ").append(std::to_string(strlen(str))).append("\r\n\r\n").append(str);
+        response_have_byte_ = 0;
     } else {
-        m_send_head.append("\r\n");
+        response_send_head_.append("\r\n");
     }
 }
 
-bool HttpConnect::run_dynamic_lib() {
-    if (m_dynamic_lib_file.empty()) return false;
-    void *handle = dlopen(m_dynamic_lib_file.c_str(), RTLD_NOW);
+bool HttpConnect::runDynamicLib() {
+    if (lib_file_.empty()) return false;
+    void *handle = dlopen(lib_file_.c_str(), RTLD_NOW);
     if (handle == nullptr) {
-        LOG_WARN("装载动态库出错:%s", dlerror());
+        SPDLOG_WARN("装载动态库出错:{}", dlerror());
         return false;
     } else {
         void *deleteClassFn = dlsym(handle, "deleteClass");
         if (deleteClassFn == nullptr) {
-            LOG_WARN("加载函数deleteClass出错:%s", dlerror());
+            SPDLOG_WARN("加载函数deleteClass出错:{}", dlerror());
             dlclose(handle);
             return false;
         } else {
             void *createClassFn = dlsym(handle, "createClass");
             if (createClassFn == nullptr) {
-                LOG_WARN("加载函数createClass出错:%s", dlerror());
+                SPDLOG_WARN("加载函数createClass出错:{}", dlerror());
                 dlclose(handle);
                 return false;
             } else {
-                LOG_DEBUG("动态链接库%s装载成功", m_dynamic_lib_file.c_str());
+                SPDLOG_DEBUG("动态链接库{}装载成功", lib_file_);
                 auto c = (reinterpret_cast<BaseClass*(*)()>(createClassFn))();
-                auto iter = headers.find("connection");
-                if (iter != headers.end() && (iter->second[0] == 'K' || iter->second[0] == 'k')) {
-                    m_keep_alive = true;
-                    res_headers.emplace("Connection", m_keep_alive?"keep-alive":"close");
+                auto iter = request_headers_.find("connection");
+                if (iter != request_headers_.end() && (iter->second[0] == 'K' || iter->second[0] == 'k')) {
+                    keep_alive_ = true;
+                    response_headers_.emplace("Connection", keep_alive_?"keep-alive":"close");
                 }
-                iter = headers.find("content-length");
-                if (iter != headers.end()) {
+                iter = request_headers_.find("content-length");
+                if (iter != request_headers_.end()) {
                     try {
-                        m_body_len = std::stoull(iter->second);
+                        request_body_length_ = std::stoull(iter->second);
                     } catch (const std::exception &e) {
-                        m_body_len = 0;
+                        request_body_length_ = 0;
                     }
                 } else {
-                    m_body_len = 0;
+                    request_body_length_ = 0;
                 }
                 try {
                     char filename[256] = {'\0'};
-                    c->service(&request, &response, m_dynamic_lib_file.substr(0, m_dynamic_lib_file.find_last_of('/') + 1), filename);
-                    if (filename[0] != '\0' && ! res_write) {
+                    c->service(&request_, &response_, lib_file_.substr(0, lib_file_.find_last_of('/') + 1), filename);
+                    if (filename[0] != '\0' && ! response_write_) {
                         std::string name = filename;
                         if (! isFile(name)) {
-                            name = m_dynamic_lib_file.substr(0, m_dynamic_lib_file.find_last_of('/') + 1) + name;
+                            name = lib_file_.substr(0, lib_file_.find_last_of('/') + 1) + name;
                         }
-                        init_write_file(name);
+                        initWriteFile(name);
                         (reinterpret_cast<void(*)(BaseClass*)>(deleteClassFn))(c);
                         dlclose(handle);
                         return true;
                     }
-                    if (! res_write) {
-                        m_have_byte = res_size;
-                        res_headers.insert_or_assign("Content-Length", std::to_string(res_size));
-                        setResponseState(res_state);
+                    if (! response_write_) {
+                        response_have_byte_ = response_size_;
+                        response_headers_.insert_or_assign("Content-Length", std::to_string(response_size_));
+                        if (response_state_ == 0) response_state_ = 200;
+                        setResponseState(response_state_);
                     } else {
-                        LOG_DEBUG("socket:%d lib response status: %d", m_sd, res_state);
-                        response.flush();
-                        if (res_chunk) {
+                        SPDLOG_DEBUG("socket:{} lib response status: {}", sd_, response_state_);
+                        response_.flush();
+                        if (response_chunk_) {
                             const char *buf = "0\r\n\r\n";
                             int size = 5;
                             while (size > 0) {
 #ifdef HTTPS
                                 size_t len;
-                                int ret = SSL_write_ex(m_ssl, buf, size, &len);
+                                int ret = SSL_write_ex(ssl_, buf, size, &len);
                                 if (ret == 0) {
-                                    int err = SSL_get_error(m_ssl, ret);
+                                    int err = SSL_get_error(ssl_, ret);
                                     if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
                                         std::this_thread::sleep_for(std::chrono::milliseconds(100));
                                         continue;
@@ -794,7 +780,7 @@ bool HttpConnect::run_dynamic_lib() {
                                 }
                                 size -= len;
 #else
-                                ssize_t len = send(m_sd, buf, size, MSG_NOSIGNAL);
+                                ssize_t len = send(sd_, buf, size, MSG_NOSIGNAL);
                                 if (len > 0) {
                                     size -= len;
                                 } else if (len < 0) {
@@ -824,17 +810,24 @@ bool HttpConnect::isFile(const std::string &filename) const {
     return stat(filename.c_str(), &st) == 0 && S_ISREG(st.st_mode);
 }
 
+std::string HttpConnect::trim(const std::string & str) const {
+    size_t start = str.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) return "";
+    size_t end = str.find_last_not_of(" \t\r\n");
+    return str.substr(start, end - start + 1);
+}
+
 #ifdef HTTPS
 void HttpConnect::handshake() {
-    if (m_handshake) return;
-    int ret = SSL_accept(m_ssl);
+    if (handshake_) return;
+    int ret = SSL_accept(ssl_);
     if (ret == 1) {
         modfd(EPOLLIN);
-        LOG_DEBUG("socket: %d tls握手完成", m_sd);
-        m_handshake = true;
+        SPDLOG_DEBUG("socket: {} tls握手完成", sd_);
+        handshake_ = true;
         return;
     }
-    int err = SSL_get_error(m_ssl, ret);
+    int err = SSL_get_error(ssl_, ret);
 
     if (err == SSL_ERROR_WANT_READ) {
         modfd(EPOLLIN);
@@ -850,7 +843,7 @@ void HttpConnect::handshake() {
         iov[0].iov_len = sizeof(data);
         iov[1].iov_base = &conn;
         iov[1].iov_len = sizeof(HttpConnect*);
-        ssize_t ret = writev(m_pipe, iov, 2);
+        ssize_t ret = writev(pipe_, iov, 2);
         (void)ret;
         return;
     }

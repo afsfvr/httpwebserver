@@ -1,10 +1,6 @@
 #ifndef BLOCK_QUEUE_H_
 #define BLOCK_QUEUE_H_
 
-#include <pthread.h>
-#include <cstring>
-#include <unistd.h>
-
 template<class T>
 class BlockQueue {
 public:
