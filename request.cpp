@@ -6,7 +6,7 @@ Request::Request(HttpConnect *conn): conn_{conn} {}
 #ifdef USE_REDIS
 Session Request::getSession() const {
     if (conn_) return conn_->session_id_;
-    return {};
+    return 0;
 }
 #endif
 

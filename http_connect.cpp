@@ -622,7 +622,7 @@ void HttpConnect::initWriteFile(const std::string &filename) {
 
 void HttpConnect::setCookie() {
 #ifdef USE_REDIS
-    res_session_id = 0;
+    session_id_ = 0;
     if (pool == nullptr) return;
     RedisConn redis = pool->get();
     if (! redis) return;
@@ -634,7 +634,7 @@ void HttpConnect::setCookie() {
             if (redis->saveSession(u)) break;
             if (! redis->live()) return;
         }
-        res_session_id = u;
+        session_id_ = u;
         response_headers_.emplace("set-cookie", "session=" + std::to_string(u) + ";path=/;");
         SPDLOG_INFO("url:{}添加cookie:{}", url_, response_headers_.find("set-cookie")->second);
     } else {
@@ -653,14 +653,14 @@ void HttpConnect::setCookie() {
                 if (redis->saveSession(u)) break;
                 if (! redis->live()) return;
             }
-            res_session_id = u;
+            session_id_ = u;
             response_headers_.emplace("set-cookie", "session=" + std::to_string(u) + ";path=/;");
         } else {
             try {
                 uint64_t session = std::stoull(s);
                 bool l = redis->updateExpire(session);
                 if (! l) throw std::invalid_argument("更新过期时间失败");
-                res_session_id = session;
+                session_id_ = session;
             } catch (std::exception &e) {
                 uint64_t u;
                 while (true) {
@@ -669,7 +669,7 @@ void HttpConnect::setCookie() {
                     if (! redis->live()) return;
                 }
                 SPDLOG_WARN("cookie {}错误: {}", iter->second, e.what());
-                res_session_id = u;
+                session_id_ = u;
                 response_headers_.emplace("set-cookie", "session=" + std::to_string(u) + ";path=/;");
             }
         }

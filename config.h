@@ -24,7 +24,7 @@ public:
     const std::string& getLogFile() const { return log_file_; }
     const std::string& getWebappsPath() const { return webapps_path_; }
     const std::string& getRootUrl() const { return root_url_; }
-#ifdef REDIS
+#ifdef USE_REDIS
     const std::string& getRedisIp() const { return redis_ip_; }
     int getRedisPort() const { return redis_port_; }
     const std::string& getRedisName() const { return redis_name_; }
@@ -32,7 +32,7 @@ public:
     int getRedisMinIdle() const { return redis_min_idle_; }
     int getRedisMaxIdle() const { return redis_max_idle_; }
     int getRedisMaxCount() const { return redis_max_count_; }
-#endif // REDIS
+#endif // USE_REDIS
     const std::map<std::string, std::string, case_insensitive_compare>& getType() const { return type_; }
     bool allowIpv4() const { return ipv4_; }
     bool allowIpv6() const { return ipv6_; }
@@ -52,7 +52,7 @@ private:
 #endif // NO_LOG
     std::string webapps_path_;
     std::string root_url_;
-#ifdef REDIS
+#ifdef USE_REDIS
     std::string redis_ip_{ "127.0.0.1" };
     int redis_port_{ 6379 };
     std::string redis_name_;
@@ -60,7 +60,7 @@ private:
     int redis_min_idle_{ 1 };
     int redis_max_idle_{ 4 };
     int redis_max_count_{ 8 };
-#endif // REDIS
+#endif // USE_REDIS
     std::map<std::string, std::string, case_insensitive_compare> type_;
     bool ipv4_{ false };
     bool ipv6_{ false };

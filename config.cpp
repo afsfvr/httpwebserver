@@ -49,7 +49,7 @@ void Config::parse(int argc, char *argv[]) {
 #endif // NO_LOG
         {"webapps", 1, nullptr, 'w'},
         {"root-url", 1, nullptr, 'r'},
-#ifdef REDIS
+#ifdef USE_REDIS
 #define REDIS_STR "i:P:u:S:m:M:c:"
         {"redis-ip", 1, nullptr, 'i'},
         {"redis-port", 1, nullptr, 'P'},
@@ -60,7 +60,7 @@ void Config::parse(int argc, char *argv[]) {
         {"redis-count", 1, nullptr, 'c'},
 #else
 #define REDIS_STR ""
-#endif // REDIS
+#endif // USE_REDIS
         {"help", 0, nullptr, 'h'},
         {nullptr, 0, nullptr, 0} };
     int index = 0, c = -1;
@@ -128,7 +128,7 @@ void Config::parse(int argc, char *argv[]) {
         case 'r':
             this->root_url_ = optarg;
             break;
-#ifdef REDIS
+#ifdef USE_REDIS
         case 'i':
             this->redis_ip_ = optarg;
             break;
@@ -150,7 +150,7 @@ void Config::parse(int argc, char *argv[]) {
         case 'c':
             this->redis_max_count_ = atoi(optarg);
             break;
-#endif // REDIS
+#endif // USE_REDIS
         case 'h':
 #ifdef HTTPS
             std::cout << "\t--ssl-cert\tssl证书位置" << std::endl;
@@ -168,7 +168,7 @@ void Config::parse(int argc, char *argv[]) {
 #endif //NO_LOG
             std::cout << "-w\t--webapps\t动态库所在路径，默认为工作目录下的webapps目录" << std::endl;
             std::cout << "-r\t--root-url\t根路径，即访问ip:port的路径,默认为/root/" << std::endl;
-#ifdef REDIS
+#ifdef USE_REDIS
             std::cout << "-i\t--redis-ip\tredis的ip地址，默认为127.0.0.1" << std::endl;
             std::cout << "-P\t--redis-port\tredis的端口，默认为6379" << std::endl;
             std::cout << "-u\t--redis-username\tredis的用户名，默认为空" << std::endl;
@@ -176,7 +176,7 @@ void Config::parse(int argc, char *argv[]) {
             std::cout << "-m\t--redis-min-idle\tredis连接池的最小空闲数" << std::endl;
             std::cout << "-M\t--redis-max-idle\tredis连接池的最大空闲数" << std::endl;
             std::cout << "-c\t--redis-count\t\tredis连接池的最大数量" << std::endl;
-#endif // REDIS
+#endif // USE_REDIS
             std::cout << "-h\t--help\t\t查看帮助" << std::endl;
             exit(0);
         default:
