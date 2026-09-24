@@ -4,3 +4,10 @@ libmain.so
 /main
 /build/
 /webapps/upload/resources/
+.ccls
+.ccls-cache
+/.stignore
+/.stfolder/
+/black.txt
+/redis/
+/redis.sh

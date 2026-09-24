@@ -127,7 +127,6 @@ void HttpConnect::init() {
     response_cookies_.clear();
     forward_.clear();
     response_headers_.emplace("Content-Encoding", "identity");
-    response_headers_.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
 #ifdef HTTPS
     response_headers_.emplace("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
 #endif
@@ -171,12 +170,25 @@ void HttpConnect::readData() {
         if (ret == 0) {
             int err = SSL_get_error(ssl_, ret);
             if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) break;
-            if (err == SSL_ERROR_ZERO_RETURN) throw 101;
-            if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                SPDLOG_ERROR("sd:{}, ssl: {}, recv error: {}", sd_, err, strerror(errno));
+            if (err == SSL_ERROR_ZERO_RETURN) throw 101; // 对端正常关闭了连接
+            if (err == SSL_ERROR_SYSCALL) {
+                if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                    SPDLOG_ERROR("sd:{}, ssl: {}, recv error: {}", sd_, err, strerror(errno));
+                    throw 101;
+                }
+                break;
+            }
+            if (err == SSL_ERROR_SSL) {
+                unsigned long e;
+                char buf[256];
+                while ((e = ERR_get_error()) != 0) {
+                    ERR_error_string_n(e, buf, sizeof(buf));
+                    SPDLOG_ERROR("sd:{}, ssl: {}, SSL error: {}", sd_, err, buf);
+                }
                 throw 101;
             }
-            break;
+            SPDLOG_ERROR("sd:{}, ssl: {}, unknown error", sd_, err);
+            throw 101;
         }
 #else
         ssize_t len = recv(sd_, request_buf_ + request_read_byte_, MAX_BUFSIZE - request_read_byte_, 0);
@@ -430,12 +442,27 @@ void HttpConnect::writeData() {
             if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
                 modfd(EPOLLOUT);
                 return;
-            } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                SPDLOG_ERROR("sd:{}, ssl: {} send: {}", sd_, err, strerror(errno));
+            } else if (err == SSL_ERROR_ZERO_RETURN) { // 对端正常关闭了连接
+                SPDLOG_INFO("sd:{} peer closed connection", sd_);
+                throw 103;
+            } else if (err == SSL_ERROR_SYSCALL) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    modfd(EPOLLOUT);
+                    return;
+                }
+                SPDLOG_ERROR("sd:{}, ssl: {} send syscall error: {}", sd_, err, strerror(errno));
+                throw 103;
+            } else if (err == SSL_ERROR_SSL) {
+                unsigned long e;
+                char buf[256];
+                while ((e = ERR_get_error()) != 0) {
+                    ERR_error_string_n(e, buf, sizeof(buf));
+                    SPDLOG_ERROR("sd:{}, ssl: {} SSL error: {}", sd_, err, buf);
+                }
                 throw 103;
             } else {
-                modfd(EPOLLOUT);
-                return;
+                SPDLOG_ERROR("sd:{}, ssl: {} send unknown error", sd_, err);
+                throw 103;
             }
         }
 #else
@@ -465,13 +492,29 @@ bool HttpConnect::writeHead() {
             int err = SSL_get_error(ssl_, ret);
             if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
                 modfd(EPOLLOUT);
-            } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                SPDLOG_ERROR("sd:{}, ssl: {}, send head: {}", sd_, err, strerror(errno));
+                return false;
+            } else if (err == SSL_ERROR_ZERO_RETURN) { // 对端正常关闭了连接
+                SPDLOG_INFO("sd:{} peer closed connection", sd_);
+                throw 102;
+            } else if (err == SSL_ERROR_SYSCALL) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    modfd(EPOLLOUT);
+                    return false;
+                }
+                SPDLOG_ERROR("sd:{}, ssl: {} send syscall error: {}", sd_, err, strerror(errno));
+                throw 102;
+            } else if (err == SSL_ERROR_SSL) {
+                unsigned long e;
+                char buf[256];
+                while ((e = ERR_get_error()) != 0) {
+                    ERR_error_string_n(e, buf, sizeof(buf));
+                    SPDLOG_ERROR("sd:{}, ssl: {} SSL error: {}", sd_, err, buf);
+                }
                 throw 102;
             } else {
-                modfd(EPOLLOUT);
+                SPDLOG_ERROR("sd:{}, ssl: {} send unknown error", sd_, err);
+                throw 102;
             }
-            return false;
         }
 #else
         ssize_t len = send(sd_, response_send_head_.c_str(), response_send_head_.size(), MSG_NOSIGNAL);
@@ -691,6 +734,7 @@ void HttpConnect::setResponseState(int s, const char *str) {
     response_send_head_ = "HTTP/1.1 ";
     response_send_head_.append(std::to_string(s)).append("\r\n");
     if (str != nullptr) response_headers_.erase("content-length");
+    response_headers_.emplace("Content-Type", std::string("text/html;charset=").append(encoding));
     for (auto it = response_headers_.cbegin(); it != response_headers_.cend(); it++) {
         response_send_head_.append(it->first).append(":").append(it->second).append("\r\n");
     }

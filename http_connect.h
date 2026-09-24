@@ -3,6 +3,7 @@
 
 #ifdef HTTPS
 #include <openssl/ssl.h>
+#include <openssl/err.h>
 #endif
 
 #include "threadpool.h"

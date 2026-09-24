@@ -171,7 +171,7 @@ void WebServer::eventLoop() {
         for (int i = 0; i < count; i++) {
             int fd = events[i].data.fd;
             if (fd == m_listenfd) {
-                add_connect_v4_v6();
+                add_connect();
             } else if (fd == m_pipe[0]) {
                 handlePipeEvent();
             } else {
@@ -196,73 +196,36 @@ int WebServer::setnonblock(int fd) {
     return old_option;
 }
 
-void WebServer::add_connect_v4() {
-    sockaddr_in address;
+void WebServer::add_connect() {
+    sockaddr_storage address{};
     socklen_t addr_len = sizeof(address);
     int sd = accept(m_listenfd, reinterpret_cast<sockaddr *>(&address), &addr_len);
     if (sd < 0) {
         SPDLOG_ERROR("accept:{}", strerror(errno));
         return;
     }
-    SPDLOG_DEBUG("收到新连接,sd = {}", sd);
-    char ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &address.sin_addr, ip, INET_ADDRSTRLEN);
-    if (inBlackList(ip)) {
-        SPDLOG_DEBUG("ip {} 在黑名单内，关闭连接", ip);
-        close(sd);
-        return;
-    }
-#ifdef HTTPS
-    SSL *ssl = SSL_new(m_ctx);
-    SSL_set_fd(ssl, sd);
-    new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, ntohs(address.sin_port));
-#else
-    new HttpConnect(m_epollfd, m_pipe[1], sd, ip, ntohs(address.sin_port));
-#endif
-}
-
-void WebServer::add_connect_v6() {
-    sockaddr_in6 address;
-    socklen_t addr_len = sizeof(address);
-    int sd = accept(m_listenfd, reinterpret_cast<sockaddr *>(&address), &addr_len);
-    if (sd < 0) {
-        SPDLOG_ERROR("accept: {}", strerror(errno));
-        return;
-    }
-    SPDLOG_DEBUG("收到新连接,sd = {}", sd);
-    char ip[INET6_ADDRSTRLEN];
-    inet_ntop(AF_INET6, &address.sin6_addr, ip, INET6_ADDRSTRLEN);
-    if (inBlackList(ip)) {
-        SPDLOG_DEBUG("ip {} 在黑名单内，关闭连接", ip);
-        close(sd);
-        return;
-    }
-#ifdef HTTPS
-    SSL *ssl = SSL_new(m_ctx);
-    SSL_set_fd(ssl, sd);
-    new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, ntohs(address.sin6_port));
-#else
-    new HttpConnect(m_epollfd, m_pipe[1], sd, ip, ntohs(address.sin6_port));
-#endif
-}
-
-void WebServer::add_connect_v4_v6() {
-    sockaddr_in6 address;
-    socklen_t addr_len = sizeof(address);
-    int sd = accept(m_listenfd, reinterpret_cast<sockaddr *>(&address), &addr_len);
-    if (sd < 0) {
-        SPDLOG_ERROR("accept: {}", strerror(errno));
-        return;
-    }
-    SPDLOG_DEBUG("收到新连接,sd = {}", sd);
-    char ip[INET6_ADDRSTRLEN];
-    if (IN6_IS_ADDR_V4MAPPED(&address.sin6_addr)) {
-        struct in_addr ipv4addr;
-        memcpy(&ipv4addr, &address.sin6_addr.s6_addr[12], sizeof(ipv4addr));
-        inet_ntop(AF_INET, &ipv4addr, ip, sizeof(ip));
+    char ip[INET6_ADDRSTRLEN]{};
+    uint16_t port;
+    if (address.ss_family == AF_INET) {
+        auto *addr = reinterpret_cast<sockaddr_in *>(&address);
+        inet_ntop(AF_INET, &addr->sin_addr, ip, sizeof(ip));
+        port = ntohs(addr->sin_port);
+    } else if (address.ss_family == AF_INET6) {
+        auto *addr = reinterpret_cast<sockaddr_in6 *>(&address);
+        if (IN6_IS_ADDR_V4MAPPED(&addr->sin6_addr)) {
+            struct in_addr ipv4addr;
+            memcpy(&ipv4addr, &addr->sin6_addr.s6_addr[12], sizeof(ipv4addr));
+            inet_ntop(AF_INET, &ipv4addr, ip, sizeof(ip));
+        } else {
+            inet_ntop(AF_INET6, &addr->sin6_addr, ip, INET6_ADDRSTRLEN);
+        }
+        port = ntohs(addr->sin6_port);
     } else {
-        inet_ntop(AF_INET6, &address.sin6_addr, ip, INET6_ADDRSTRLEN);
+        SPDLOG_ERROR("未知网络协议: {}", address.ss_family);
+        close(sd);
+        return;
     }
+    SPDLOG_DEBUG("收到新连接,sd = {}, ip={}, port={}", sd, ip, port);
     if (inBlackList(ip)) {
         SPDLOG_DEBUG("ip {} 在黑名单内，关闭连接", ip);
         close(sd);
@@ -270,10 +233,20 @@ void WebServer::add_connect_v4_v6() {
     }
 #ifdef HTTPS
     SSL *ssl = SSL_new(m_ctx);
-    SSL_set_fd(ssl, sd);
-    new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, ntohs(address.sin6_port));
+    if (! ssl) {
+        SPDLOG_ERROR("SSL_new return nullptr");
+        close(sd);
+        return;
+    }
+    if (SSL_set_fd(ssl, sd) != 1) {
+        SPDLOG_ERROR("SSL_set_fd failed");
+        SSL_free(ssl);
+        close(sd);
+        return;
+    }
+    new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, port);
 #else
-    new HttpConnect(m_epollfd, m_pipe[1], sd, ip, ntohs(address.sin6_port));
+    new HttpConnect(m_epollfd, m_pipe[1], sd, ip, port);
 #endif
 }
 
@@ -353,6 +326,7 @@ void WebServer::handlePipeEvent() {
 void WebServer::addBlackList(const std::string & ip, bool save) {
     std::string trimmed = trim(ip);
     if (trimmed.length() == 0) return;
+    if (trimmed == "localhost" || trimmed == "::1" || trimmed == "127.0.0.1") return;
     auto iter = m_blackList.insert(trimmed);
     if (iter.second && save) {
         saveBlackList();
@@ -378,7 +352,7 @@ void WebServer::loadBlackList() {
     while (std::getline(fin, ip)) {
         std::string trimmed = trim(ip);
         if (trimmed.length() != 0) {
-            m_blackList.insert(ip);
+            m_blackList.insert(trimmed);
         }
     }
     SPDLOG_DEBUG("加载黑名单完成，共计{}个ip", m_blackList.size());
