@@ -16,9 +16,7 @@ public:
     ~WebServer();
     void eventLoop();
     int setnonblock(int fd);
-    void add_connect_v4();
-    void add_connect_v6();
-    void add_connect_v4_v6();
+    void add_connect();
     void stop();
 private:
     void handlePipeEvent();
