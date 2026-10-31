@@ -48,6 +48,9 @@ private:
     void parseLine(char *data);
     void parseHead(char *data);
     void parseParam(char *data);
+#ifndef HTTPS
+    bool parseProxyLine(const char *line);
+#endif
     void writeData();
     bool writeHead();
     void initWriteLib();
@@ -78,6 +81,8 @@ private:
 #ifdef HTTPS
     SSL *ssl_;
     bool handshake_;
+#else
+    bool proxy_need_;
 #endif
 
     // request

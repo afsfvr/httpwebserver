@@ -33,6 +33,8 @@ void Config::parse(int argc, char *argv[]) {
 #ifdef HTTPS
         {"ssl-cert", 1, nullptr, 0},
         {"ssl-key", 1, nullptr, 0},
+#else // HTTPS
+        {"proxy-protocol", 0, nullptr, 'x'},
 #endif // HTTPS
         {"ipv4", 0, nullptr, '4'},
         {"ipv6", 0, nullptr, '6'},
@@ -72,6 +74,12 @@ void Config::parse(int argc, char *argv[]) {
                 cert_ = optarg;
             } else if (strncmp(argarr[index].name, "ssl-key", 7) == 0) {
                 key_ = optarg;
+            }
+            break;
+#else // HTTPS
+        case 0:
+            if (strncmp(argarr[index].name, "proxy-protocol", 14) == 0) {
+                this->proxy_protocol_ = true;
             }
             break;
 #endif // HTTPS
@@ -155,6 +163,8 @@ void Config::parse(int argc, char *argv[]) {
 #ifdef HTTPS
             std::cout << "\t--ssl-cert\tssl证书位置" << std::endl;
             std::cout << "\t--ssl-key\tssl私钥位置" << std::endl;
+#else // HTTPS
+            std::cout << "-x\t--proxy-protocol\t启用PROXY Protocol V1协议头解析" << std::endl;
 #endif // HTTPS
             std::cout << "-4\t--ipv4\t\t允许ipv4访问(默认同时允许ipv4和ipv6)" << std::endl;
             std::cout << "-6\t--ipv6\t\t允许ipv6访问(默认同时允许ipv4和ipv6)" << std::endl;

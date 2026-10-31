@@ -41,6 +41,8 @@ HttpConnect::HttpConnect(const int &epollfd, const int &pipe,
     init();
 #ifdef HTTPS
     handshake_ = false;
+#else
+    proxy_need_ = Config::getInstance()->isProxyProtocol();
 #endif
     struct epoll_event ev;
     ev.data.ptr = this;
@@ -345,6 +347,27 @@ void HttpConnect::readData() {
 void HttpConnect::parse() {
     char *str = request_buf_;
     char *s = strstr(str, "\r\n");
+#ifndef HTTPS
+    if (proxy_need_ && s && url_.empty()) {
+        proxy_need_ = false;
+        if (s - str >= 6 && memcmp(str, "PROXY ", 6) == 0) {
+            *s++ = '\0';
+            *s++ = '\0';
+            size_t len = strlen(str) + 2;
+            request_read_byte_ -= len;
+            if (! parseProxyLine(str)) {
+                SPDLOG_WARN("socket:{} PROXY协议头非法: {}", sd_, str);
+                state_ = STATE::WRITE;
+                setResponseState(400, "<h1>400</h1>");
+                setCookie();
+                modfd(EPOLLOUT);
+                return;
+            }
+            str = s;
+            s = strstr(str, "\r\n");
+        }
+    }
+#endif
     while (s != nullptr && request_read_byte_ > 0) {
         *s++ = '\0';
         *s++ = '\0';
@@ -480,6 +503,52 @@ void HttpConnect::parseParam(char *data) {
         SPDLOG_WARN("请求参数{}未包含=", data);
     }
 }
+
+#ifndef HTTPS
+bool HttpConnect::parseProxyLine(const char *line) {
+    char proto[8] = {}, src[46] = {}, dst[46] = {};
+    unsigned int sport = 0, dport = 0;
+    char extra = 0;
+    const int n = sscanf(line, "PROXY %7s %45s %45s %5u %5u %c", proto, src, dst, &sport, &dport, &extra);
+    if (strcmp(proto, "UNKNOWN") == 0 && (n == 1 || n == 2)) {
+        SPDLOG_INFO("socket:{} PROXY协议:UNKNOWN,保持原ip: {}, port: {}", sd_, ip_, port_);
+        return true;
+    }
+    if (n == 5 && (strcmp(proto, "TCP4") == 0 || strcmp(proto, "TCP6") == 0)) {
+        if (sport > 65535 || dport > 65535) {
+            SPDLOG_WARN("socket:{} PROXY协议端口非法: {}", sd_, line);
+            return false;
+        }
+        if (strcmp(proto, "TCP4") == 0) {
+            in_addr v4src{}, v4dst{};
+            if (inet_pton(AF_INET, src, &v4src) != 1 || inet_pton(AF_INET, dst, &v4dst) != 1) {
+                SPDLOG_WARN("socket:{} PROXY协议ipv4非法: {}", sd_, line);
+                return false;
+            }
+            ip_ = src;
+        } else {
+            in6_addr v6src{}, v6dst{};
+            if (inet_pton(AF_INET6, src, &v6src) != 1 || inet_pton(AF_INET6, dst, &v6dst) != 1) {
+                SPDLOG_WARN("socket:{} PROXY协议ipv6非法: {}", sd_, line);
+                return false;
+            }
+            char text[INET6_ADDRSTRLEN] = {};
+            if (IN6_IS_ADDR_V4MAPPED(&v6src)) {
+                in_addr v4{};
+                memcpy(&v4, v6src.s6_addr + 12, sizeof(v4));
+                inet_ntop(AF_INET, &v4, text, sizeof(text));
+            } else {
+                inet_ntop(AF_INET6, &v6src, text, sizeof(text));
+            }
+            ip_ = text;
+        }
+        port_ = static_cast<int>(sport);
+        SPDLOG_INFO("socket:{} PROXY协议头解析成功, ip: {}, port: {}", sd_, ip_, port_);
+        return true;
+    }
+    return false;
+}
+#endif
 
 HttpConnect::operator int() {
     return sd_;

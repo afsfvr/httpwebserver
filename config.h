@@ -41,6 +41,8 @@ public:
 #ifdef HTTPS
     const std::string& getCertPath() const { return cert_; }
     const std::string& getKeyPath() const { return key_; }
+#else // HTTPS
+    bool isProxyProtocol() const { return proxy_protocol_; }
 #endif // HTTPS
 private:
     Config();
@@ -69,6 +71,8 @@ private:
 #ifdef HTTPS
     std::string cert_;
     std::string key_;
+#else // HTTPS
+    bool proxy_protocol_{ false };
 #endif // HTTPS
 };
 
