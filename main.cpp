@@ -53,13 +53,13 @@ int main(int argc, char *argv[]) {
 void quit(int x) {
     switch (x) {
     case 2:
-        SPDLOG_WARN("收到信号SIGINT,退出程序", x);
+        SPDLOG_WARN("收到信号SIGINT,退出程序");
         break;
     case 3:
-        SPDLOG_WARN("收到信号SIGQUIT,退出程序", x);
+        SPDLOG_WARN("收到信号SIGQUIT,退出程序");
         break;
     case 15:
-        SPDLOG_WARN("收到信号SIGTERM,退出程序", x);
+        SPDLOG_WARN("收到信号SIGTERM,退出程序");
         break;
     default:
         SPDLOG_WARN("收到信号{},退出程序", x);
@@ -96,10 +96,10 @@ void hookFunction() {
     termiosSettings.c_lflag |= ECHO;
     tcsetattr(fileno(stdin), TCSANOW, &termiosSettings);
 
+    delete webserver;
 #ifdef USE_REDIS
     delete pool;
 #endif
-    delete webserver;
 }
 
 #ifdef NO_LOG

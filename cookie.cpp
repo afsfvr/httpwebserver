@@ -82,7 +82,7 @@ Cookie& Cookie::setValue(const std::string& value) {
 }
 
 Cookie& Cookie::setDomain(const std::string& domain) {
-    if (! domain.empty() && m_name.compare(0, 7, "__Host-")) {
+    if (! domain.empty() && m_name.compare(0, 7, "__Host-") == 0) {
         throw std::invalid_argument(std::string("name以__Host-开头时禁止设置domain"));
     }
     this->m_domain = domain;
@@ -114,7 +114,7 @@ Cookie& Cookie::setPartinioned(bool partitioned) {
 }
 
 Cookie& Cookie::setPath(const std::string& path) {
-    if (path != "/" && m_name.compare(0, 7, "__Host-")) {
+    if (path != "/" && m_name.compare(0, 7, "__Host-") == 0) {
         throw std::invalid_argument(std::string("name以__Host-开头时禁止设置path的值必须为/"));
     }
     this->m_path = path;

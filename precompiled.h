@@ -33,6 +33,7 @@
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/epoll.h>
+#include <poll.h>
 #include <sys/resource.h>
 #include <sys/mman.h>
 #include <sys/uio.h>

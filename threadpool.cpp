@@ -47,6 +47,7 @@ bool ThreadPool::cancelAndDeleteJob(Task *work) {
         if (work == data->m_data || *work == data->m_data) {
             if (data == m_head) {
                 m_head = m_head->next;
+                if (m_head == nullptr) m_tail = nullptr;
             } else {
                 front->next = data->next;
                 if (data->next == nullptr) {
@@ -71,6 +72,7 @@ bool ThreadPool::cancelJob(Task *work) {
         if (work == data->m_data || *work == data->m_data) {
             if (data == m_head) {
                 m_head = m_head->next;
+                if (m_head == nullptr) m_tail = nullptr;
             } else {
                 front->next = data->next;
                 if (data->next == nullptr) {

@@ -33,6 +33,13 @@ private:
     unsigned char toHex(unsigned char x) const;
     std::string urlDecode(const std::string& str) const;
     void modfd(int ev);
+    void flushEvents();
+    void pipeClose();
+    bool isKeepAlive() const;
+    void applyConnectionHeader();
+    void parseRequestBodyLength();
+    bool waitFd(short events);
+    void drainRequestBody();
     void init();
     int setblock(const int &fd);
     int setnonblock(const int &fd);
@@ -95,6 +102,8 @@ private:
     size_t response_send_byte_;
     size_t response_have_byte_;
     std::string response_send_head_;
+    uint32_t pending_events_{ 0 };
+    bool pending_rearm_{ false };
 };
 
 #endif

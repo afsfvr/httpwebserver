@@ -20,8 +20,10 @@ public:
     int getThreadNum() const { return thread_num_; }
     const std::string& getWorkDirectory() const { return work_dir_; }
     bool isDaemon() const { return daemon_; }
+#ifndef NO_LOG
     int getLogLevel() const { return log_level_; }
     const std::string& getLogFile() const { return log_file_; }
+#endif
     const std::string& getWebappsPath() const { return webapps_path_; }
     const std::string& getRootUrl() const { return root_url_; }
 #ifdef USE_REDIS

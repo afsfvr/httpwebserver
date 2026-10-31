@@ -54,14 +54,28 @@ WebServer::WebServer():
         SPDLOG_ERROR("getrlimit: {}", strerror(errno));
         exit(1);
     }
-    struct rlimit l;
-    l.rlim_cur = std::max((unsigned int) m_limit.rlim_cur, MAX_EVENT);
-    l.rlim_max = std::max((unsigned int) m_limit.rlim_max, MAX_EVENT);
-    if (setrlimit(RLIMIT_OFILE, &l) < 0) {
-        SPDLOG_ERROR("setrlimit: {}", strerror(errno));
-        exit(1);
+    struct rlimit l{ m_limit };
+    const rlim_t need = static_cast<rlim_t>(MAX_EVENT);
+    if (l.rlim_cur == RLIM_INFINITY) {
+        // 已是无限制,无需调整
+    } else if (l.rlim_cur < need) {
+        if (l.rlim_max != RLIM_INFINITY && l.rlim_max < need) {
+            l.rlim_max = need;
+        }
+        l.rlim_cur = std::min(l.rlim_max, need);
+        if (l.rlim_cur != m_limit.rlim_cur) {
+            if (setrlimit(RLIMIT_OFILE, &l) < 0) {
+                SPDLOG_ERROR("setrlimit: {}", strerror(errno));
+                exit(1);
+            }
+        }
     }
-    SPDLOG_INFO("最多可存在{}个文件描述符", l.rlim_cur);
+    if (l.rlim_cur == RLIM_INFINITY) {
+        SPDLOG_INFO("最多可存在{}个文件描述符", "无限制");
+    } else {
+        SPDLOG_INFO("最多可存在{}个文件描述符", l.rlim_cur);
+    }
+
     if ((m_listenfd = socket(Config::getInstance()->allowIpv6() ? PF_INET6 : PF_INET, SOCK_STREAM, 0)) < 0) {
         SPDLOG_ERROR("socket: {}", strerror(errno));
         exit(1);
@@ -117,6 +131,7 @@ WebServer::WebServer():
         SPDLOG_ERROR("listen: {}", strerror(errno));
         exit(1);
     }
+    setnonblock(m_listenfd);
 
     if (pipe(m_pipe) < 0) {
         close(m_listenfd);

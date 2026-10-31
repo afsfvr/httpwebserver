@@ -90,10 +90,146 @@ std::string HttpConnect::urlDecode(const std::string& str) const {
 }
 
 void HttpConnect::modfd(int ev) {
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = ev | EPOLLET | EPOLLRDHUP | EPOLLONESHOT;
-    epoll_ctl(epollfd_, EPOLL_CTL_MOD, sd_, &event);
+    pending_events_ = static_cast<uint32_t>(ev);
+    pending_rearm_ = true;
+}
+
+void HttpConnect::flushEvents() {
+    if (! pending_rearm_) return;
+    pending_rearm_ = false;
+    struct epoll_event ev;
+    ev.data.ptr = this;
+    ev.events = pending_events_ | EPOLLET | EPOLLRDHUP | EPOLLONESHOT;
+    epoll_ctl(epollfd_, EPOLL_CTL_MOD, sd_, &ev);
+}
+
+void HttpConnect::pipeClose() {
+    state_ = STATE::CLOSE;
+    HttpConnect *conn = this;
+    uint8_t data[2];
+    data[0] = 0x02; // type
+    data[1] = sizeof(HttpConnect*); // length
+    struct iovec iov[2];
+    iov[0].iov_base = data;
+    iov[0].iov_len = sizeof(data);
+    iov[1].iov_base = &conn;
+    iov[1].iov_len = sizeof(HttpConnect*);
+    ssize_t ret = writev(pipe_, iov, 2);
+    (void) ret;
+}
+
+bool HttpConnect::isKeepAlive() const {
+    if (request_headers_.find("transfer-encoding") != request_headers_.end()) return false;
+    auto iter = request_headers_.find("connection");
+    return iter != request_headers_.end() && (iter->second[0] == 'K' || iter->second[0] == 'k');
+}
+
+void HttpConnect::applyConnectionHeader() {
+    if (isKeepAlive()) {
+        keep_alive_ = true;
+        response_headers_.emplace("Connection", "keep-alive");
+    } else {
+        keep_alive_ = false;
+        response_headers_.emplace("Connection", "close");
+    }
+}
+
+void HttpConnect::parseRequestBodyLength() {
+    auto iter = request_headers_.find("content-length");
+    if (iter != request_headers_.end()) {
+        try {
+            request_body_length_ = std::stoull(iter->second);
+        } catch (const std::exception &e) {
+            request_body_length_ = 0;
+        }
+    } else {
+        request_body_length_ = 0;
+    }
+}
+
+bool HttpConnect::waitFd(short events) {
+    struct pollfd pfd{};
+    pfd.fd = sd_;
+    pfd.events = events;
+    while (true) {
+        int ret = poll(&pfd, 1, 5000);
+        if (ret > 0) return true;
+        if (ret == -1 && errno == EINTR) continue;
+        return false;
+    }
+}
+
+void HttpConnect::drainRequestBody() {
+    if (! keep_alive_) return;
+    if (request_body_length_ > 1024 * 1024) { // 大于1M的请求体直接关闭连接
+        SPDLOG_WARN("socket:{}请求体过大({}),关闭连接", sd_, request_body_length_);
+        throw 4;
+    }
+    if (request_read_byte_ > 0) { // 先消费缓冲区中残留的请求体字节
+        int n = std::min(request_read_byte_, static_cast<int>(request_body_length_));
+        if (n > 0) {
+            request_read_byte_ -= n;
+            request_body_length_ -= static_cast<size_t>(n);
+            memmove(request_buf_, request_buf_ + n, static_cast<size_t>(request_read_byte_));
+            memset(request_buf_ + request_read_byte_, 0, MAX_BUFSIZE - request_read_byte_);
+        }
+    }
+    char tmp[1024];
+    while (request_body_length_ > 0) {
+        size_t min = std::min(1024ul, request_body_length_);
+#ifdef HTTPS
+        size_t len;
+        int ret = SSL_read_ex(ssl_, tmp, min, &len);
+        if (ret == 0) {
+            int err = SSL_get_error(ssl_, ret);
+            if (err == SSL_ERROR_ZERO_RETURN) throw 1; // 对端正常关闭了连接
+            if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+                if (! waitFd(err == SSL_ERROR_WANT_READ ? POLLIN : POLLOUT)) {
+                    SPDLOG_WARN("socket:{}等待请求体超时,关闭连接", sd_);
+                    throw 4;
+                }
+                continue;
+            }
+            if (err == SSL_ERROR_SYSCALL) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    if (! waitFd(POLLIN)) {
+                        SPDLOG_WARN("socket:{}等待请求体超时,关闭连接", sd_);
+                        throw 4;
+                    }
+                    continue;
+                }
+                SPDLOG_ERROR("sd:{}, ssl: {}, 丢弃请求体syscall error: {}", sd_, err, strerror(errno));
+                throw 4;
+            }
+            if (err == SSL_ERROR_SSL) {
+                unsigned long e;
+                char buf[256];
+                while ((e = ERR_get_error()) != 0) {
+                    ERR_error_string_n(e, buf, sizeof(buf));
+                    SPDLOG_ERROR("sd:{}, ssl: {}, SSL error: {}", sd_, err, buf);
+                }
+                throw 4;
+            }
+            SPDLOG_ERROR("sd:{}, ssl: {}, 丢弃请求体unknown error", sd_, err);
+            throw 4;
+        }
+#else
+        ssize_t len = recv(sd_, tmp, min, 0);
+        if (len == 0) throw 1; // 对端关闭了连接
+        if (len == -1) {
+            if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                SPDLOG_ERROR("sd:{},丢弃请求体recv:{}", sd_, strerror(errno));
+                throw 4;
+            }
+            if (! waitFd(POLLIN)) {
+                SPDLOG_WARN("socket:{}等待请求体超时,关闭连接", sd_);
+                throw 4;
+            }
+            continue;
+        }
+#endif
+        request_body_length_ -= len;
+    }
 }
 
 void HttpConnect::init() {
@@ -362,8 +498,7 @@ void HttpConnect::run() {
 #ifdef HTTPS
         if (! handshake_) {
             handshake();
-            return;
-        }
+        } else
 #endif
         if (state_ == STATE::READ) {
             readData();
@@ -372,22 +507,18 @@ void HttpConnect::run() {
         }
     } catch (int i) {
         SPDLOG_DEBUG("抛出了异常: {}", i);
-        state_ = STATE::CLOSE;
-        HttpConnect *conn = this;
-        uint8_t data[2];
-        data[0] = 0x02; // type
-        data[1] = sizeof(HttpConnect*); // length
-        struct iovec iov[2];
-        iov[0].iov_base = data;
-        iov[0].iov_len = sizeof(data);
-        iov[1].iov_base = &conn;
-        iov[1].iov_len = sizeof(HttpConnect*);
-        ssize_t ret = writev(pipe_, iov, 2);
-        (void)ret;
+        pipeClose();
+        return;
+    } catch (...) {
+        SPDLOG_DEBUG("发生了未知异常");
+        pipeClose();
+        return;
     }
+    flushEvents();
 }
 
 void HttpConnect::writeData() {
+    parseRequestBodyLength();
     initWriteLib();
     if (! lib_file_.empty()) {
         setblock(sd_);
@@ -398,30 +529,12 @@ void HttpConnect::writeData() {
                 setResponseState(500, "<h1>500</h1>");
                 SPDLOG_DEBUG("socket:{},运行动态库错误", sd_);
             }
-            // 处理请求体
-            if (request_body_length_ > 1024 * 1024) { // 未处理请求体大于1M直接关闭连接
-                throw 4;
-            } else if (request_body_length_ > 0) {
-                char tmp[1024];
-                while (request_body_length_ > 0) {
-                    size_t min = std::min(1024ul, request_body_length_);
-#ifdef HTTPS
-                    size_t len;
-                    int ret = SSL_read_ex(ssl_, tmp, min, &len);
-                    if (ret == 0) throw 4;
-#else
-                    ssize_t len = recv(sd_, tmp, min, 0);
-                    if (len == 0) throw 1;
-                    if (len == -1) throw 4;
-#endif
-                    request_body_length_ -= len;
-                }
-            }
         } catch (int ex) {
             setnonblock(sd_);
             throw ex;
         }
     }
+    drainRequestBody();
 
     if (! writeHead()) return;
     while (true) {
@@ -721,11 +834,7 @@ void HttpConnect::setCookie() {
 }
 
 void HttpConnect::setResponseState(int s, const char *str) {
-    auto iter = request_headers_.find("connection");
-    if (iter != request_headers_.end() && (iter->second[0] == 'K' || iter->second[0] == 'k')) {
-        keep_alive_ = true;
-        response_headers_.emplace("Connection", "keep-alive");
-    }
+    applyConnectionHeader();
     char buf[64] = {'\0'};
     time_t timestamp = time(nullptr);
     std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&timestamp));
@@ -771,21 +880,7 @@ bool HttpConnect::runDynamicLib() {
             } else {
                 SPDLOG_DEBUG("动态链接库{}装载成功", lib_file_);
                 auto c = (reinterpret_cast<BaseClass*(*)()>(createClassFn))();
-                auto iter = request_headers_.find("connection");
-                if (iter != request_headers_.end() && (iter->second[0] == 'K' || iter->second[0] == 'k')) {
-                    keep_alive_ = true;
-                    response_headers_.emplace("Connection", keep_alive_?"keep-alive":"close");
-                }
-                iter = request_headers_.find("content-length");
-                if (iter != request_headers_.end()) {
-                    try {
-                        request_body_length_ = std::stoull(iter->second);
-                    } catch (const std::exception &e) {
-                        request_body_length_ = 0;
-                    }
-                } else {
-                    request_body_length_ = 0;
-                }
+                applyConnectionHeader();
                 try {
                     char filename[256] = {'\0'};
                     c->service(&request_, &response_, lib_file_.substr(0, lib_file_.find_last_of('/') + 1), filename);
@@ -878,19 +973,7 @@ void HttpConnect::handshake() {
     } else if (err == SSL_ERROR_WANT_WRITE) {
         modfd(EPOLLOUT);
     } else {
-        HttpConnect *conn = this;
-        uint8_t data[2];
-        data[0] = 0x02; // type
-        data[1] = sizeof(HttpConnect*); // length
-        struct iovec iov[2];
-        iov[0].iov_base = data;
-        iov[0].iov_len = sizeof(data);
-        iov[1].iov_base = &conn;
-        iov[1].iov_len = sizeof(HttpConnect*);
-        ssize_t ret = writev(pipe_, iov, 2);
-        (void)ret;
-        return;
+        pipeClose();
     }
-    return;
 }
 #endif

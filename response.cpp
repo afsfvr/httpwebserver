@@ -70,13 +70,8 @@ std::map<std::string, std::string, case_insensitive_compare> *Response::getHeade
     return &conn_->response_headers_;
 }
 
-std::string Response::decimalToHex(int num) const {
+std::string Response::decimalToHex(size_t num) const {
     if (num == 0) return "0";
-    bool b = false;
-    if (num < 0) {
-        b = true;
-        num = -num;
-    }
     std::string s;
     while (num > 0) {
         int remainder = num % 16;
@@ -87,7 +82,6 @@ std::string Response::decimalToHex(int num) const {
         }
         num /= 16;
     }
-    if (b) s.push_back('-');
     for (int i = 0, j = s.size() - 1; i < j; i++, j--) {
         char c = s[i];
         s[i] = s[j];
@@ -148,19 +142,58 @@ void Response::writeLen(const void *buf, size_t size, int flags) const {
 void Response::writeFile(const std::string &filename) {
     if (!conn_ || conn_->sd_ < 0) return;
     struct stat st;
-    if (stat(filename.c_str(), &st) == 0) {
-        int fd = open(filename.c_str(), O_RDONLY);
-        if (fd != -1) {
-            flush();
-            if (conn_->response_chunk_) {
-                std::string buf = decimalToHex(st.st_size).append("\r\n");
-                writeLen(buf.data(), buf.size());
-            }
-            sendfile(conn_->sd_, fd, 0, st.st_size);
-            close(fd);
-            if (conn_->response_chunk_) writeLen("\r\n", 2);
+    if (stat(filename.c_str(), &st) != 0 || ! S_ISREG(st.st_mode)) return;
+    int fd = open(filename.c_str(), O_RDONLY);
+    if (fd == -1) {
+        SPDLOG_ERROR("打开文件{}失败: {}", filename, strerror(errno));
+        return;
+    }
+    size_t file_size = static_cast<size_t>(st.st_size);
+    void *mapped = MAP_FAILED;
+    if (file_size > 0) {
+        mapped = mmap(nullptr, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
+        if (mapped == MAP_FAILED) {
+            SPDLOG_WARN("mmap文件{}失败,回退为逐块读取: {}", filename, strerror(errno));
         }
     }
+    try {
+        flush();
+        if (file_size > 0) {
+            if (conn_->response_chunk_) {
+                std::string buf = decimalToHex(file_size).append("\r\n");
+                writeLen(buf.data(), buf.size(), MSG_MORE);
+            }
+            if (mapped != MAP_FAILED) {
+                writeLen(mapped, file_size, MSG_MORE);
+                if (conn_->response_chunk_) writeLen("\r\n", 2);
+            } else {
+                char buf[65536];
+                size_t total = 0;
+                while (total < file_size) {
+                    size_t need = std::min(sizeof(buf), file_size - total);
+                    ssize_t n = read(fd, buf, need);
+                    if (n < 0) {
+                        SPDLOG_ERROR("读取文件{}失败: {}", filename, strerror(errno));
+                        throw 103;
+                    }
+                    if (n == 0) break;
+                    if (conn_->response_chunk_) {
+                        std::string s = decimalToHex(static_cast<size_t>(n)).append("\r\n");
+                        writeLen(s.data(), s.size(), MSG_MORE);
+                    }
+                    writeLen(buf, static_cast<size_t>(n), MSG_MORE);
+                    if (conn_->response_chunk_) writeLen("\r\n", 2);
+                    total += static_cast<size_t>(n);
+                }
+            }
+        }
+    } catch (...) {
+        if (mapped != MAP_FAILED) munmap(mapped, file_size);
+        close(fd);
+        throw;
+    }
+    if (mapped != MAP_FAILED) munmap(mapped, file_size);
+    close(fd);
 }
 
 void Response::flush() {
