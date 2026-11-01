@@ -34,7 +34,7 @@ void Config::parse(int argc, char *argv[]) {
         {"ssl-cert", 1, nullptr, 0},
         {"ssl-key", 1, nullptr, 0},
 #else // HTTPS
-        {"proxy-protocol", 0, nullptr, 'x'},
+        {"proxy-protocol", 0, nullptr, 0},
 #endif // HTTPS
         {"ipv4", 0, nullptr, '4'},
         {"ipv6", 0, nullptr, '6'},
@@ -164,14 +164,14 @@ void Config::parse(int argc, char *argv[]) {
             std::cout << "\t--ssl-cert\tssl证书位置" << std::endl;
             std::cout << "\t--ssl-key\tssl私钥位置" << std::endl;
 #else // HTTPS
-            std::cout << "-x\t--proxy-protocol\t启用PROXY Protocol V1协议头解析" << std::endl;
+            std::cout << "--proxy-protocol\t启用PROXY Protocol V1协议头解析" << std::endl;
 #endif // HTTPS
             std::cout << "-4\t--ipv4\t\t允许ipv4访问(默认同时允许ipv4和ipv6)" << std::endl;
             std::cout << "-6\t--ipv6\t\t允许ipv6访问(默认同时允许ipv4和ipv6)" << std::endl;
             std::cout << "-p\t--port\t\t监听端口，默认8888" << std::endl;
             std::cout << "-t\t--threads\t线程数量，默认8" << std::endl;
             std::cout << "-W\t--workdir\t工作路径，需为绝对路径" << std::endl;
-            std::cout << "-d\t--daemon\t守护进程日志路径" << std::endl;
+            std::cout << "-d\t--daemon\t\t以守护进程方式运行" << std::endl;
 #ifndef NO_LOG
             std::cout << "-l\t--log-level\t日志级别,0-trace,1-debug,2-info,3-warn,4-error,5-critical,6-off默认2" << std::endl;
             std::cout << "-f\t--log-file\t日志文件路径" << std::endl;

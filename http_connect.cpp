@@ -510,7 +510,7 @@ bool HttpConnect::parseProxyLine(const char *line) {
     unsigned int sport = 0, dport = 0;
     char extra = 0;
     const int n = sscanf(line, "PROXY %7s %45s %45s %5u %5u %c", proto, src, dst, &sport, &dport, &extra);
-    if (strcmp(proto, "UNKNOWN") == 0 && (n == 1 || n == 2)) {
+    if (strcmp(proto, "UNKNOWN") == 0) {
         SPDLOG_INFO("socket:{} PROXY协议:UNKNOWN,保持原ip: {}, port: {}", sd_, ip_, port_);
         return true;
     }
