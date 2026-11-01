@@ -55,7 +55,7 @@ if(HTTPS)
     target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif(HTTPS)
 if(NGINX)
-    target_compile_options(${PROJECT_NAME} PRIVATE USE_NGINX)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_NGINX)
 endif(NGINX)
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     $<$<CONFIG:Debug>:DEBUG>

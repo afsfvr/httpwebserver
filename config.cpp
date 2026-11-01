@@ -52,14 +52,14 @@ void Config::parse(int argc, char *argv[]) {
         {"webapps", 1, nullptr, 'w'},
         {"root-url", 1, nullptr, 'r'},
 #ifdef USE_REDIS
-#define REDIS_STR "i:P:u:S:m:M:c:"
+#define REDIS_STR "i:P:u:m:M:c:"
         {"redis-ip", 1, nullptr, 'i'},
         {"redis-port", 1, nullptr, 'P'},
         {"redis-username", 1, nullptr, 'u'},
-        {"redis-secret", 1, nullptr, 'S'},
+        {"redis-passwd", 1, nullptr, 'S'},
         {"redis-min-idle", 1, nullptr, 'm'},
         {"redis-max-idle", 1, nullptr, 'M'},
-        {"redis-count", 1, nullptr, 'c'},
+        {"redis-max-count", 1, nullptr, 'c'},
 #else
 #define REDIS_STR ""
 #endif // USE_REDIS
@@ -144,7 +144,7 @@ void Config::parse(int argc, char *argv[]) {
             this->redis_port_ = atoi(optarg);
             break;
         case 'u':
-            this->redis_name_ = optarg;
+            this->redis_username_ = optarg;
             break;
         case 'S':
             this->redis_passwd_ = optarg;
@@ -161,33 +161,34 @@ void Config::parse(int argc, char *argv[]) {
 #endif // USE_REDIS
         case 'h':
 #ifdef HTTPS
-            std::cout << "\t--ssl-cert\tssl证书位置" << std::endl;
-            std::cout << "\t--ssl-key\tssl私钥位置" << std::endl;
+            std::cout << "\t--ssl-cert\t\tssl证书位置" << std::endl;
+            std::cout << "\t--ssl-key\t\tssl私钥位置" << std::endl;
 #else // HTTPS
-            std::cout << "--proxy-protocol\t启用PROXY Protocol V1协议头解析" << std::endl;
+            std::cout << "\t--proxy-protocol\t启用PROXY Protocol V1协议头解析" << std::endl;
 #endif // HTTPS
-            std::cout << "-4\t--ipv4\t\t允许ipv4访问(默认同时允许ipv4和ipv6)" << std::endl;
-            std::cout << "-6\t--ipv6\t\t允许ipv6访问(默认同时允许ipv4和ipv6)" << std::endl;
-            std::cout << "-p\t--port\t\t监听端口，默认8888" << std::endl;
-            std::cout << "-t\t--threads\t线程数量，默认8" << std::endl;
-            std::cout << "-W\t--workdir\t工作路径，需为绝对路径" << std::endl;
+            std::cout << "-4\t--ipv4\t\t\t允许ipv4访问" << std::endl;
+            std::cout << "-6\t--ipv6\t\t\t允许ipv6访问" << std::endl;
+            std::cout << "\t\t\t\t不带这两个参数时同时允许ipv4和ipv6" << std::endl;
+            std::cout << "-p\t--port\t\t\t监听端口，默认8888" << std::endl;
+            std::cout << "-t\t--threads\t\t线程数量，默认8" << std::endl;
+            std::cout << "-W\t--workdir\t\t工作路径，需为绝对路径" << std::endl;
             std::cout << "-d\t--daemon\t\t以守护进程方式运行" << std::endl;
 #ifndef NO_LOG
-            std::cout << "-l\t--log-level\t日志级别,0-trace,1-debug,2-info,3-warn,4-error,5-critical,6-off默认2" << std::endl;
-            std::cout << "-f\t--log-file\t日志文件路径" << std::endl;
+            std::cout << "-l\t--log-level\t\t日志级别,0-trace,1-debug,2-info,3-warn,4-error,5-critical,6-off默认2" << std::endl;
+            std::cout << "-f\t--log-file\t\t日志文件路径" << std::endl;
 #endif //NO_LOG
-            std::cout << "-w\t--webapps\t动态库所在路径，默认为工作目录下的webapps目录" << std::endl;
-            std::cout << "-r\t--root-url\t根路径，即访问ip:port的路径,默认为/root/" << std::endl;
+            std::cout << "-w\t--webapps\t\t动态库所在路径，默认为工作目录下的webapps目录" << std::endl;
+            std::cout << "-r\t--root-url\t\t根路径，即访问ip:port的路径,默认为/root/" << std::endl;
 #ifdef USE_REDIS
-            std::cout << "-i\t--redis-ip\tredis的ip地址，默认为127.0.0.1" << std::endl;
-            std::cout << "-P\t--redis-port\tredis的端口，默认为6379" << std::endl;
+            std::cout << "-i\t--redis-ip\t\tredis的ip地址，默认为127.0.0.1" << std::endl;
+            std::cout << "-P\t--redis-port\t\tredis的端口，默认为6379" << std::endl;
             std::cout << "-u\t--redis-username\tredis的用户名，默认为空" << std::endl;
-            std::cout << "-S\t--redis-secret\tredis的密码，默认为空" << std::endl;
+            std::cout << "\t--redis-passwd\t\tredis的密码，默认为空" << std::endl;
             std::cout << "-m\t--redis-min-idle\tredis连接池的最小空闲数" << std::endl;
             std::cout << "-M\t--redis-max-idle\tredis连接池的最大空闲数" << std::endl;
-            std::cout << "-c\t--redis-count\t\tredis连接池的最大数量" << std::endl;
+            std::cout << "-c\t--redis-max-count\tredis连接池的最大数量" << std::endl;
 #endif // USE_REDIS
-            std::cout << "-h\t--help\t\t查看帮助" << std::endl;
+            std::cout << "-h\t--help\t\t\t查看帮助" << std::endl;
             exit(0);
         default:
             std::cerr << "参数非法，输入-h或--help查看帮助" << std::endl;

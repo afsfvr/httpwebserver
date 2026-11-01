@@ -35,7 +35,7 @@ RedisPool::RedisPool(): m_idle_count(0), m_use_count(0) {
     m_max_count = config->getRedisMaxCount();
     m_url = config->getRedisIp();
     m_port = config->getRedisPort();
-    m_username = config->getRedisName();
+    m_username = config->getRedisUserName();
     m_password = config->getRedisPasswd();
 
     m_redis = new Redis * [m_max_count];

@@ -5,6 +5,7 @@
 #include <openssl/ssl.h>
 #endif
 
+#include "blacklist.h"
 #include "threadpool.h"
 #include "http_connect.h"
 
@@ -20,24 +21,16 @@ public:
     void stop();
 private:
     void handlePipeEvent();
-    void addBlackList(const std::string &ip, bool save = true);
-    void removeBlackList(const std::string &ip, bool save = true);
-    void loadBlackList();
-    void saveBlackList();
-    bool inBlackList(const std::string &ip);
-    std::string trim(const std::string &str);
 #ifdef HTTPS
     static int alpnSelectCb(SSL *ssl, const unsigned char **out, unsigned char *outlen,
         const unsigned char *in, unsigned int inlen, void *arg);
 #endif
 
-    std::unordered_set<std::string> m_blackList;
-    const std::string m_blackListFile = "black.txt";
-    std::vector<char> m_pipeBuf;
     struct rlimit m_limit;
     int m_listenfd;
     int m_epollfd;
     int m_pipe[2];
+    std::vector<char> m_pipeBuf;
     ThreadPool *m_pool;
     bool m_run;
 #ifdef HTTPS

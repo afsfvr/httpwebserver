@@ -1,4 +1,5 @@
 #include "base_class.h"
+#include "blacklist.h"
 #include "config.h"
 #include "http_connect.h"
 
@@ -20,6 +21,7 @@ enum class STATE {
  * 2 send head end
  * 3 send end
  * 4 keep-alive=false
+ * 5 in black list
  * 101 recv err
  * 102 send head err
  * 103 send err
@@ -544,6 +546,10 @@ bool HttpConnect::parseProxyLine(const char *line) {
         }
         port_ = static_cast<int>(sport);
         SPDLOG_INFO("socket:{} PROXY协议头解析成功, ip: {}, port: {}", sd_, ip_, port_);
+        if (BlackList::getInstance()->contains(ip_)) {
+            SPDLOG_INFO("socket:{} 真实ip {} 在黑名单内，关闭连接", sd_, ip_);
+            throw 5;
+        }
         return true;
     }
     return false;

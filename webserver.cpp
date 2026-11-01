@@ -154,7 +154,7 @@ WebServer::WebServer():
     ev.data.fd = m_pipe[0];
     ev.events = EPOLLIN;
     epoll_ctl(m_epollfd, EPOLL_CTL_ADD, m_pipe[0], &ev);
-    loadBlackList();
+    BlackList::getInstance()->load();
 
     m_pool = new ThreadPool;
 }
@@ -162,7 +162,7 @@ WebServer::WebServer():
 WebServer::~WebServer() {
     delete m_pool;
     m_pool = nullptr;
-    saveBlackList();
+    BlackList::getInstance()->save();
     epoll_ctl(m_epollfd, EPOLL_CTL_DEL, m_listenfd, nullptr);
     epoll_ctl(m_epollfd, EPOLL_CTL_DEL, m_pipe[0], nullptr);
     close(m_listenfd);
@@ -241,7 +241,7 @@ void WebServer::add_connect() {
         return;
     }
     SPDLOG_DEBUG("收到新连接,sd = {}, ip={}, port={}", sd, ip, port);
-    if (inBlackList(ip)) {
+    if (BlackList::getInstance()->contains(ip)) {
         SPDLOG_DEBUG("ip {} 在黑名单内，关闭连接", ip);
         close(sd);
         return;
@@ -311,7 +311,7 @@ void WebServer::handlePipeEvent() {
         case 1: {
             std::string ip{ data, length };
             SPDLOG_DEBUG("添加黑名单: {}", ip);
-            addBlackList(ip);
+            BlackList::getInstance()->add(ip);
             break;
         }
         case 2: {
@@ -336,67 +336,6 @@ void WebServer::handlePipeEvent() {
     } else  if (offset > 0) {
         m_pipeBuf.erase(m_pipeBuf.begin(), m_pipeBuf.begin() + offset);
     }
-}
-
-void WebServer::addBlackList(const std::string & ip, bool save) {
-    std::string trimmed = trim(ip);
-    if (trimmed.length() == 0) return;
-    if (trimmed == "localhost" || trimmed == "::1" || trimmed == "127.0.0.1") return;
-    auto iter = m_blackList.insert(trimmed);
-    if (iter.second && save) {
-        saveBlackList();
-    }
-}
-
-void WebServer::removeBlackList(const std::string & ip, bool save) {
-    int ret = m_blackList.erase(ip);
-    if (ret > 0 && save) {
-        saveBlackList();
-    }
-}
-
-void WebServer::loadBlackList() {
-    m_blackList.clear();
-    std::ifstream fin(m_blackListFile);
-    if (!fin.is_open()) {
-        SPDLOG_WARN("无法打开黑名单文件{}: {}", m_blackListFile, std::strerror(errno));
-        return;
-    }
-
-    std::string ip;
-    while (std::getline(fin, ip)) {
-        std::string trimmed = trim(ip);
-        if (trimmed.length() != 0) {
-            m_blackList.insert(trimmed);
-        }
-    }
-    SPDLOG_DEBUG("加载黑名单完成，共计{}个ip", m_blackList.size());
-    fin.close();
-}
-
-void WebServer::saveBlackList() {
-    std::ofstream fout(m_blackListFile, std::ofstream::out | std::ofstream::trunc);
-    if (!fout.is_open()) {
-        SPDLOG_WARN("无法写入黑名单文件{}: {}", m_blackListFile, std::strerror(errno));
-        return;
-    }
-
-    for (const auto &ip : m_blackList) {
-        fout << ip << "\n";
-    }
-    fout.close();
-    SPDLOG_DEBUG("保存黑名单完成，共计{}个ip", m_blackList.size());
-}
-
-bool WebServer::inBlackList(const std::string & ip) {
-    return m_blackList.find(ip) != m_blackList.end();
-}
-
-std::string WebServer::trim(const std::string & str) {
-    size_t start = str.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos) return "";
-    size_t end = str.find_last_not_of(" \t\r\n");
-    return str.substr(start, end - start + 1);
 }
 
 #ifdef HTTPS

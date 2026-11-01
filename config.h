@@ -29,7 +29,7 @@ public:
 #ifdef USE_REDIS
     const std::string& getRedisIp() const { return redis_ip_; }
     int getRedisPort() const { return redis_port_; }
-    const std::string& getRedisName() const { return redis_name_; }
+    const std::string& getRedisUsername() const { return redis_username_; }
     const std::string& getRedisPasswd() const { return redis_passwd_; }
     int getRedisMinIdle() const { return redis_min_idle_; }
     int getRedisMaxIdle() const { return redis_max_idle_; }
@@ -59,7 +59,7 @@ private:
 #ifdef USE_REDIS
     std::string redis_ip_{ "127.0.0.1" };
     int redis_port_{ 6379 };
-    std::string redis_name_;
+    std::string redis_username_;
     std::string redis_passwd_;
     int redis_min_idle_{ 1 };
     int redis_max_idle_{ 4 };
