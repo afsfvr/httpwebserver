@@ -28,7 +28,7 @@ if(CMAKE_CONFIGURATION_TYPES)
     message(STATUS "Available configurations: ${GREEN}${CMAKE_CONFIGURATION_TYPES}${NOCOLOR}")
 endif(CMAKE_CONFIGURATION_TYPES)
 
-file(GLOB SRC *.cpp)
+file(GLOB SRC CONFIGURE_DEPENDS *.cpp)
 add_executable(${PROJECT_NAME} ${SRC})
 
 if(LOG)

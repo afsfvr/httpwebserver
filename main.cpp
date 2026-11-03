@@ -1,5 +1,6 @@
 #include "webserver.h"
 #include "config.h"
+#include "dynlib_cache.h"
 
 #ifdef USE_REDIS
 #include "redis_pool.h"
@@ -40,6 +41,7 @@ int main(int argc, char *argv[]) {
     pool = nullptr;
     pool = new RedisPool();
 #endif
+    DynamicLibCache::instance().start(config->getWebappsPath());
     signal(SIGPIPE, SIG_IGN);
     signal(SIGINT, quit);
     signal(SIGQUIT, quit);
@@ -96,6 +98,7 @@ void hookFunction() {
     termiosSettings.c_lflag |= ECHO;
     tcsetattr(fileno(stdin), TCSANOW, &termiosSettings);
 
+    DynamicLibCache::instance().stop();
     delete webserver;
 #ifdef USE_REDIS
     delete pool;

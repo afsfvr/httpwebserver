@@ -4,6 +4,8 @@
 #include "request.h"
 #include "response.h"
 
+#include <cstring>
+
 class BaseClass {
 public:
     virtual ~BaseClass() = default;

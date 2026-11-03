@@ -1,6 +1,7 @@
 #include "base_class.h"
 #include "blacklist.h"
 #include "config.h"
+#include "dynlib_cache.h"
 #include "http_connect.h"
 
 #ifdef USE_REDIS
@@ -125,7 +126,8 @@ void HttpConnect::pipeClose() {
 bool HttpConnect::isKeepAlive() const {
     if (request_headers_.find("transfer-encoding") != request_headers_.end()) return false;
     auto iter = request_headers_.find("connection");
-    return iter != request_headers_.end() && (iter->second[0] == 'K' || iter->second[0] == 'k');
+    if (iter == request_headers_.end()) return true;
+    return strncasecmp(iter->second.c_str(), "close", 5) != 0;
 }
 
 void HttpConnect::applyConnectionHeader() {
@@ -936,86 +938,64 @@ void HttpConnect::setResponseState(int s, const char *str) {
 
 bool HttpConnect::runDynamicLib() {
     if (lib_file_.empty()) return false;
-    void *handle = dlopen(lib_file_.c_str(), RTLD_NOW);
-    if (handle == nullptr) {
-        SPDLOG_WARN("装载动态库出错:{}", dlerror());
-        return false;
-    } else {
-        void *deleteClassFn = dlsym(handle, "deleteClass");
-        if (deleteClassFn == nullptr) {
-            SPDLOG_WARN("加载函数deleteClass出错:{}", dlerror());
-            dlclose(handle);
-            return false;
+    auto entry = DynamicLibCache::instance().acquire(lib_file_);
+    if (entry == nullptr) return false;
+    auto c = (entry->create)();
+    applyConnectionHeader();
+    try {
+        char filename[256] = {'\0'};
+        c->service(&request_, &response_, lib_file_.substr(0, lib_file_.find_last_of('/') + 1), filename);
+        if (filename[0] != '\0' && ! response_write_) {
+            std::string name = filename;
+            if (! isFile(name)) {
+                name = lib_file_.substr(0, lib_file_.find_last_of('/') + 1) + name;
+            }
+            initWriteFile(name);
+            (entry->destroy)(c);
+            return true;
+        }
+        if (! response_write_) {
+            response_have_byte_ = response_size_;
+            response_headers_.insert_or_assign("Content-Length", std::to_string(response_size_));
+            if (response_state_ == 0) response_state_ = 200;
+            setResponseState(response_state_);
         } else {
-            void *createClassFn = dlsym(handle, "createClass");
-            if (createClassFn == nullptr) {
-                SPDLOG_WARN("加载函数createClass出错:{}", dlerror());
-                dlclose(handle);
-                return false;
-            } else {
-                SPDLOG_DEBUG("动态链接库{}装载成功", lib_file_);
-                auto c = (reinterpret_cast<BaseClass*(*)()>(createClassFn))();
-                applyConnectionHeader();
-                try {
-                    char filename[256] = {'\0'};
-                    c->service(&request_, &response_, lib_file_.substr(0, lib_file_.find_last_of('/') + 1), filename);
-                    if (filename[0] != '\0' && ! response_write_) {
-                        std::string name = filename;
-                        if (! isFile(name)) {
-                            name = lib_file_.substr(0, lib_file_.find_last_of('/') + 1) + name;
-                        }
-                        initWriteFile(name);
-                        (reinterpret_cast<void(*)(BaseClass*)>(deleteClassFn))(c);
-                        dlclose(handle);
-                        return true;
-                    }
-                    if (! response_write_) {
-                        response_have_byte_ = response_size_;
-                        response_headers_.insert_or_assign("Content-Length", std::to_string(response_size_));
-                        if (response_state_ == 0) response_state_ = 200;
-                        setResponseState(response_state_);
-                    } else {
-                        SPDLOG_DEBUG("socket:{} lib response status: {}", sd_, response_state_);
-                        response_.flush();
-                        if (response_chunk_) {
-                            const char *buf = "0\r\n\r\n";
-                            int size = 5;
-                            while (size > 0) {
+            SPDLOG_DEBUG("socket:{} lib response status: {}", sd_, response_state_);
+            response_.flush();
+            if (response_chunk_) {
+                const char *buf = "0\r\n\r\n";
+                int size = 5;
+                while (size > 0) {
 #ifdef HTTPS
-                                size_t len;
-                                int ret = SSL_write_ex(ssl_, buf, size, &len);
-                                if (ret == 0) {
-                                    int err = SSL_get_error(ssl_, ret);
-                                    if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
-                                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                                        continue;
-                                    }
-                                    throw 103;
-                                }
-                                size -= len;
-#else
-                                ssize_t len = send(sd_, buf, size, MSG_NOSIGNAL);
-                                if (len > 0) {
-                                    size -= len;
-                                } else if (len < 0) {
-                                    throw 103;
-                                } else {
-                                    throw 3;
-                                }
-#endif
-                            }
+                    size_t len;
+                    int ret = SSL_write_ex(ssl_, buf, size, &len);
+                    if (ret == 0) {
+                        int err = SSL_get_error(ssl_, ret);
+                        if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                            continue;
                         }
+                        throw 103;
                     }
-                } catch (int except) {
-                    (reinterpret_cast<void(*)(BaseClass*)>(deleteClassFn))(c);
-                    dlclose(handle);
-                    throw except;
+                    size -= len;
+#else
+                    ssize_t len = send(sd_, buf, size, MSG_NOSIGNAL);
+                    if (len > 0) {
+                        size -= len;
+                    } else if (len < 0) {
+                        throw 103;
+                    } else {
+                        throw 3;
+                    }
+#endif
                 }
-                (reinterpret_cast<void(*)(BaseClass*)>(deleteClassFn))(c);
             }
         }
+    } catch (int except) {
+        (entry->destroy)(c);
+        throw except;
     }
-    dlclose(handle);
+    (entry->destroy)(c);
     return true;
 }
 
