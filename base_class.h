@@ -6,6 +6,7 @@
 
 #include <cstring>
 
+// cur_path为libmain.so所在的文件夹，最后一个字符为/
 class BaseClass {
 public:
     virtual ~BaseClass() = default;

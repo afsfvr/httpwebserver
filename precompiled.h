@@ -40,6 +40,7 @@
 #include <sys/uio.h>
 #include <sys/sendfile.h>
 #include <netinet/ip.h>
+#include <netinet/tcp.h>
 
 #ifdef NO_LOG
 #define SPDLOG_TRACE(...) (void)0

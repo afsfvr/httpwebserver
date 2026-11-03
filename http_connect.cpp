@@ -39,6 +39,10 @@ HttpConnect::HttpConnect(const int &epollfd, const int &pipe,
     request_{this}, response_{this} {
     srand(time(nullptr));
     setnonblock(sd_);
+    int val = 1;
+    if (setsockopt(sd_, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val)) < 0) { // 关闭Nagle
+        SPDLOG_WARN("setsockopt TCP_NODELAY: {}", strerror(errno));
+    }
     response_file_ptr_ = nullptr;
     keep_alive_ = true;
     init();
@@ -291,8 +295,7 @@ int HttpConnect::setnonblock(const int &fd) {
 void HttpConnect::readData() {
     if (request_read_byte_ == MAX_BUFSIZE) {
         request_buf_[request_read_byte_ - 1] = '\0';
-        auto iter = request_headers_.find("connection");
-        if (iter != request_headers_.end()) request_headers_.erase(iter);
+        request_headers_["connection"] = "close";
         if (url_.empty()) {
             setResponseState(414, "<h1>414</h1>");
             SPDLOG_WARN("请求URI过大，超过缓冲区大小:{}", request_buf_);
@@ -361,6 +364,7 @@ void HttpConnect::parse() {
             request_read_byte_ -= len;
             if (! parseProxyLine(str)) {
                 SPDLOG_WARN("socket:{} PROXY协议头非法: {}", sd_, str);
+                request_headers_["connection"] = "close";
                 state_ = STATE::WRITE;
                 setResponseState(400, "<h1>400</h1>");
                 setCookie();
@@ -416,6 +420,7 @@ void HttpConnect::parseLine(char *data) {
 #endif
     char *url = strpbrk(data, " \t");
     if (url == nullptr) {
+        request_headers_["connection"] = "close";
         state_ = STATE::WRITE;
         setResponseState(400, "<h1>400</h1>");
         SPDLOG_ERROR("解析url出错: nullptr, data: {}", data);
@@ -430,6 +435,7 @@ void HttpConnect::parseLine(char *data) {
     data = url;
     char *http_version = strpbrk(url, " \t");
     if (http_version == nullptr) {
+        request_headers_["connection"] = "close";
         state_ = STATE::WRITE;
         setResponseState(400, "<h1>400</h1>");
         SPDLOG_ERROR("解析http version出错: nullptr, data: {}", data);
@@ -467,6 +473,7 @@ void HttpConnect::parseHead(char *data) {
     if (value == nullptr) {
         state_ = STATE::WRITE;
         if (data[0] != '\0') {
+            request_headers_["connection"] = "close";
             setResponseState(400, "<h1>400</h1>");
             SPDLOG_ERROR("解析请求头出错, 未找到':', data: {}", data);
         }
@@ -595,24 +602,30 @@ void HttpConnect::run() {
 }
 
 void HttpConnect::writeData() {
-    parseRequestBodyLength();
-    initWriteLib();
-    if (! lib_file_.empty()) {
-        setblock(sd_);
-        try {
-            bool ret = runDynamicLib();
-            setnonblock(sd_);
-            if (! ret) {
-                setResponseState(500, "<h1>500</h1>");
-                SPDLOG_DEBUG("socket:{},运行动态库错误", sd_);
+    if (response_state_ == 0) {
+        parseRequestBodyLength();
+        initWriteLib();
+        if (! lib_file_.empty()) {
+            setblock(sd_);
+            try {
+                bool ret = runDynamicLib();
+                setnonblock(sd_);
+                if (! ret) {
+                    setResponseState(500, "<h1>500</h1>");
+                    SPDLOG_DEBUG("socket:{},运行动态库错误", sd_);
+                }
+            } catch (int ex) {
+                setnonblock(sd_);
+                throw ex;
             }
-        } catch (int ex) {
-            setnonblock(sd_);
-            throw ex;
         }
+        drainRequestBody();
     }
-    drainRequestBody();
 
+    if (! response_send_head_.empty() && response_have_byte_ > 0 && response_file_ptr_ == nullptr) {
+        response_send_head_.append(response_buf_, response_have_byte_);
+        response_have_byte_ = 0;
+    }
     if (! writeHead()) return;
     while (true) {
         if (response_have_byte_ == 0) {
@@ -725,9 +738,6 @@ bool HttpConnect::writeHead() {
 }
 
 void HttpConnect::initWriteLib() {
-    if (response_state_ != 0) {
-        return;
-    }
     int i1 = -1, i2 = url_.size();
     for (size_t i = 0; i < url_.size(); i++) {
         if (i1 == -1) {
