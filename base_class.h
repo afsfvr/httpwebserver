@@ -94,6 +94,11 @@ void BaseClass::doTrace(Request *request, Response *response, const std::string 
 void BaseClass::service(Request *request, Response *response, const std::string &cur_path, char *filename) {
     const std::string &method = request->getMethod();
     if (method == "GET") {
+        const std::string &url = request->getUrl();
+        if (url.size() > 1 && url.rfind('/') == 0) {
+            response->sendRedirect(url + '/');
+            return;
+        }
         std::string name = this->doGet(request, response, cur_path);
         if (!name.empty()) {
             if (name[0] == '/' || name[0] == '\\') {
@@ -104,6 +109,11 @@ void BaseClass::service(Request *request, Response *response, const std::string 
             }
         }
     } else if (method == "HEAD") {
+        const std::string &url = request->getUrl();
+        if (url.size() > 1 && url.rfind('/') != 0) {
+            response->sendRedirect(url + '/');
+            return;
+        }
         this->doHead(request, response, cur_path);
     } else if (method == "POST") {
         this->doPost(request, response, cur_path);
