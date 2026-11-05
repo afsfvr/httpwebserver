@@ -30,8 +30,6 @@ public:
     bool operator==(const Task *task);
     void run();
 private:
-    unsigned char toHex(unsigned char x) const;
-    std::string urlDecode(const std::string& str) const;
     void modfd(int ev);
     void flushEvents();
     void pipeClose();
@@ -58,8 +56,6 @@ private:
     void setCookie();
     void setResponseState(int s, const char *err = nullptr);
     bool runDynamicLib();
-    bool isFile(const std::string &filename) const;
-    std::string trim(const std::string &str) const;
 #ifdef HTTPS
     void handshake();
 #endif

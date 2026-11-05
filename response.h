@@ -44,7 +44,6 @@ public:
 private:
     void writeLen(const void *buf, size_t size, int flags = 0) const;
     std::string decimalToHex(size_t num) const;
-    std::string time_tToHttpDate(time_t timestamp) const;
 
     HttpConnect *conn_;
 };

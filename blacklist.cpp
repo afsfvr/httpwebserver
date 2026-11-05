@@ -1,4 +1,5 @@
 #include "blacklist.h"
+#include "util.h"
 
 BlackList *BlackList::getInstance() {
     // 使用 new 且不注册析构，规避静态对象生存期与 atexit 钩子的顺序问题
@@ -9,7 +10,7 @@ BlackList *BlackList::getInstance() {
 BlackList::BlackList() {}
 
 void BlackList::add(const std::string & ip, bool persist) {
-    std::string trimmed = trim(ip);
+    std::string trimmed = util::trim(ip);
     if (trimmed.length() == 0) return;
     if (trimmed == "localhost" || trimmed == "::1" || trimmed == "127.0.0.1") return;
     {
@@ -46,7 +47,7 @@ void BlackList::load() {
 
     std::string ip;
     while (std::getline(fin, ip)) {
-        std::string trimmed = trim(ip);
+        std::string trimmed = util::trim(ip);
         if (trimmed.length() != 0) {
             std::unique_lock<std::shared_mutex> lock(mutex_);
             black_list_.insert(trimmed);
@@ -76,11 +77,4 @@ void BlackList::save() {
 bool BlackList::contains(const std::string & ip) {
     std::shared_lock<std::shared_mutex> lock(mutex_);
     return black_list_.find(ip) != black_list_.end();
-}
-
-std::string BlackList::trim(const std::string & str) const {
-    size_t start = str.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos) return "";
-    size_t end = str.find_last_not_of(" \t\r\n");
-    return str.substr(start, end - start + 1);
 }

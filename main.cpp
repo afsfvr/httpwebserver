@@ -41,6 +41,7 @@ int main(int argc, char *argv[]) {
     pool = nullptr;
     pool = new RedisPool();
 #endif
+    srand(time(nullptr));
     DynamicLibCache::instance().start(config->getWebappsPath());
     signal(SIGPIPE, SIG_IGN);
     signal(SIGINT, quit);

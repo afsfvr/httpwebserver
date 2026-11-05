@@ -1,5 +1,6 @@
 #include "http_connect.h"
 #include "response.h"
+#include "util.h"
 
 extern std::string encoding;
 
@@ -218,11 +219,7 @@ void Response::flush() {
             buf.append("Transfer-Encoding: chunked\r\n");
             conn_->response_chunk_ = true;
         }
-        char buff[128] = { '\0' };
-        time_t timestamp = time(nullptr);
-        std::strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&timestamp));
-        buf.append("Date: ").append(buff);
-        buf.append("\r\n\r\n");
+        buf.append("Date: ").append(util::httpDateNow()).append("\r\n\r\n");
         if (conn_->response_size_ > 0) {
             writeLen(buf.data(), buf.size());
         } else {
@@ -248,10 +245,4 @@ void Response::setStatus(int status) {
 int Response::getStatus() const {
     if (conn_) return conn_->response_state_;
     return 0;
-}
-
-std::string Response::time_tToHttpDate(time_t timestamp) const {
-    char buf[128] = { '\0' };
-    std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&timestamp));
-    return buf;
 }

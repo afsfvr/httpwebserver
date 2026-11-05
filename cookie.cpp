@@ -1,4 +1,5 @@
 #include "cookie.h"
+#include "util.h"
 
 Cookie::Cookie(const std::string& name, const std::string& value): m_expires(0), m_http_only(false), m_max_age(-1), m_partitioned(false), m_secure(false) {
     setName(name);
@@ -22,9 +23,7 @@ std::string Cookie::to_string() const {
         s.append("; Domain=").append(m_domain);
     }
     if (m_expires > 0) {
-        char buf[128] = {'\0'};
-        std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&m_expires));
-        s.append("; Expires=").append(buf);
+        s.append("; Expires=").append(util::httpDateOf(m_expires));
     }
     if (m_max_age != -1) {
         s.append("; Max-Age=").append(std::to_string(m_max_age));

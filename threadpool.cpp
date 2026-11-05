@@ -1,6 +1,6 @@
 #include "threadpool.h"
 
-ThreadPool::ThreadPool(): m_head(nullptr), m_tail(nullptr), m_run(true) {
+ThreadPool::ThreadPool(): m_run(true) {
     m_thread_num = Config::getInstance()->getThreadNum();
     m_threads = new ThreadData[m_thread_num];
     std::lock_guard lock{ m_mutex };
@@ -26,7 +26,10 @@ ThreadPool::~ThreadPool() {
             m_threads[i].thread.join();
         }
     }
-    if (m_head != nullptr) delete m_head;
+    for (Task *task : m_jobs) {
+        delete task;
+    }
+    m_jobs.clear();
     delete[] m_threads;
 }
 
@@ -40,23 +43,14 @@ bool ThreadPool::cancelAndDeleteJob(Task *work) {
             return true;
         }
     }
-    if (m_head == nullptr) {
+    if (m_jobs.empty()) {
         return false;
     }
-    for (Data *data = m_head, *front = nullptr; data != nullptr; front = data, data = data->next) {
-        if (work == data->m_data || *work == data->m_data) {
-            if (data == m_head) {
-                m_head = m_head->next;
-                if (m_head == nullptr) m_tail = nullptr;
-            } else {
-                front->next = data->next;
-                if (data->next == nullptr) {
-                    m_tail = front;
-                }
-            }
-            data->next = nullptr;
-            delete data->m_data;
-            delete data;
+    for (auto iter = m_jobs.begin(); iter != m_jobs.end(); ++iter) {
+        if (work == *iter || *work == *iter) {
+            Task *task = *iter;
+            m_jobs.erase(iter);
+            delete task;
             return true;
         }
     }
@@ -64,23 +58,11 @@ bool ThreadPool::cancelAndDeleteJob(Task *work) {
 }
 
 bool ThreadPool::cancelJob(Task *work) {
+    if (work == nullptr) return false;
     std::lock_guard lock{ m_mutex };
-    if (work == nullptr || m_head == nullptr) {
-        return false;
-    }
-    for (Data *data = m_head, *front = nullptr; data != nullptr; front = data, data = data->next) {
-        if (work == data->m_data || *work == data->m_data) {
-            if (data == m_head) {
-                m_head = m_head->next;
-                if (m_head == nullptr) m_tail = nullptr;
-            } else {
-                front->next = data->next;
-                if (data->next == nullptr) {
-                    m_tail = front;
-                }
-            }
-            data->next = nullptr;
-            delete data;
+    for (auto iter = m_jobs.begin(); iter != m_jobs.end(); ++iter) {
+        if (work == *iter || *work == *iter) {
+            m_jobs.erase(iter);
             return true;
         }
     }
@@ -90,13 +72,7 @@ bool ThreadPool::cancelJob(Task *work) {
 bool ThreadPool::addJob(Task *work) {
     if (!m_run.load(std::memory_order::memory_order_acquire)) return false;
     std::lock_guard lock{ m_mutex };
-    Data *data = new Data(work);
-    if (m_head == nullptr) {
-        m_head = m_tail = data;
-    } else {
-        m_tail->next = data;
-        m_tail = data;
-    }
+    m_jobs.push_back(work);
     m_cond.notify_one();
     return true;
 }
@@ -105,31 +81,26 @@ void ThreadPool::run(ThreadData *data) {
     if (data == nullptr) return;
     while (m_run.load(std::memory_order::memory_order_acquire)) {
         std::unique_lock lock{ m_mutex };
-        m_cond.wait(lock, [this]() { return m_head != nullptr || ! m_run.load(std::memory_order::memory_order_acquire); });
+        m_cond.wait(lock, [this]() { return ! m_jobs.empty() || ! m_run.load(std::memory_order::memory_order_acquire); });
         if (!m_run.load(std::memory_order::memory_order_acquire)) {
             return;
         }
-        Data *d = m_head;
-        if (m_head == m_tail) {
-            m_head = m_tail = nullptr;
-        } else {
-            m_head = m_head->next;
-        }
+        Task *work = m_jobs.front();
+        m_jobs.pop_front();
         {
             std::lock_guard l{ data->mutex };
-            data->ptr = d->m_data;
+            data->ptr = work;
         }
         lock.unlock();
-        d->next = nullptr;
-        d->m_data->run();
+        work->run();
         {
             std::lock_guard l{ data->mutex };
             data->ptr = nullptr;
             if (data->del) {
-                delete d->m_data;
+                delete work;
                 data->del = false;
             }
         }
-        delete d;
     }
 }
+

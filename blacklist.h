@@ -15,7 +15,6 @@ public:
     bool contains(const std::string &ip);
 private:
     BlackList();
-    std::string trim(const std::string &str) const;
 
     std::unordered_set<std::string> black_list_;
     mutable std::shared_mutex mutex_;

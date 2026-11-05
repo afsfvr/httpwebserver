@@ -3,6 +3,7 @@
 #include "config.h"
 #include "dynlib_cache.h"
 #include "http_connect.h"
+#include "util.h"
 
 #ifdef USE_REDIS
 #include "redis_pool.h"
@@ -37,7 +38,6 @@ HttpConnect::HttpConnect(const int &epollfd, const int &pipe,
         ssl_{ssl},
 #endif
     request_{this}, response_{this} {
-    srand(time(nullptr));
     setnonblock(sd_);
     int val = 1;
     if (setsockopt(sd_, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val)) < 0) { // 关闭Nagle
@@ -75,27 +75,6 @@ HttpConnect::~HttpConnect() {
     }
     close(sd_);
     sd_ = -1;
-}
-
-unsigned char HttpConnect::toHex(unsigned char x) const {
-    if (x >= 'A' && x <= 'Z') return x - 'A' + 10;
-    else if (x >= 'a' && x <= 'z') return x - 'a' + 10;
-    else if (x >= '0' && x <= '9') return x - '0';
-    else return 0;
-}
-
-std::string HttpConnect::urlDecode(const std::string& str) const {
-    std::string ret;
-    size_t length = str.length();
-    for (size_t i = 0; i < length; i++) {
-        if (i + 2 < length && str[i] == '%') {
-            ret += (toHex(str[i + 1]) << 4) | toHex(str[i + 2]);
-            i += 2;
-        } else {
-            ret += str[i];
-        }
-    }
-    return ret;
 }
 
 void HttpConnect::modfd(int ev) {
@@ -403,7 +382,7 @@ void HttpConnect::parse() {
             std::string item;
 
             while (std::getline(ss, item, ',')) {
-                forward_.push_back(trim(item));
+                forward_.push_back(util::trim(item));
             }
         }
         modfd(EPOLLOUT);
@@ -447,7 +426,7 @@ void HttpConnect::parseLine(char *data) {
         *data++ = '\0';
         parseParam(data);
     }
-    url_ = urlDecode(url);
+    url_ = util::urlDecode(url);
     size_t index = url_.find_first_not_of('/');
     if (index == std::string::npos) {
         url_ = Config::getInstance()->getRootUrl();
@@ -500,7 +479,7 @@ void HttpConnect::parseParam(char *data) {
         char *value = strchr(data, '=');
         if (value != nullptr) {
             *value++ = '\0';
-            request_params_.emplace(urlDecode(data), urlDecode(value));
+            request_params_.emplace(util::urlDecode(data), util::urlDecode(value));
         } else {
             SPDLOG_WARN("请求参数{}未包含=", data);
         }
@@ -509,7 +488,7 @@ void HttpConnect::parseParam(char *data) {
     char *value = strchr(data, '=');
     if (value != nullptr) {
         *value++ = '\0';
-        request_params_.emplace(urlDecode(data), urlDecode(value));
+        request_params_.emplace(util::urlDecode(data), util::urlDecode(value));
     } else {
         SPDLOG_WARN("请求参数{}未包含=", data);
     }
@@ -757,7 +736,7 @@ void HttpConnect::initWriteLib() {
     Config *config = Config::getInstance();
     lib_file_ = config->getWebappsPath();
     lib_file_.append(url_.substr(i1, i2 - i1)).append("/libmain.so");
-    if (! isFile(lib_file_)) {
+    if (! util::isFile(lib_file_)) {
         SPDLOG_DEBUG("动态库路径错误:{}", lib_file_);
         lib_file_.clear();
         setResponseState(404, "<h1>404</h1>");
@@ -774,8 +753,7 @@ void HttpConnect::initWriteFile(const std::string &filename) {
         setResponseState(404, "<h1>404</h1>");
         return;
     }
-    char timebuf[32] = {'\0'};
-    std::strftime(timebuf, sizeof(timebuf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&st.st_mtim.tv_sec));
+    std::string timebuf = util::httpDateOf(st.st_mtim.tv_sec);
     response_headers_.insert_or_assign("Last-Modified", timebuf);
     auto iter = request_headers_.find("If-Modified-Since");
     if (iter != request_headers_.end() && iter->second == timebuf) {
@@ -792,7 +770,7 @@ void HttpConnect::initWriteFile(const std::string &filename) {
         SPDLOG_WARN("{}不可读", filename);
         setResponseState(403, "<h1>403</h1>");
     } else {
-        int fd = open(filename.c_str(), O_RDONLY);
+        int fd = open(filename.c_str(), O_RDONLY | O_CLOEXEC);
         if (fd < 0) {
             SPDLOG_ERROR("打开文件{}失败{}", filename, strerror(errno));
             setResponseState(500, "<h1>500</h1>");
@@ -922,10 +900,7 @@ void HttpConnect::setCookie() {
 
 void HttpConnect::setResponseState(int s, const char *str) {
     applyConnectionHeader();
-    char buf[64] = {'\0'};
-    time_t timestamp = time(nullptr);
-    std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&timestamp));
-    response_headers_.emplace("Date", buf);
+    response_headers_.emplace("Date", util::httpDateNow());
     response_state_ = s;
     response_send_head_ = "HTTP/1.1 ";
     response_send_head_.append(std::to_string(s)).append("\r\n");
@@ -957,7 +932,7 @@ bool HttpConnect::runDynamicLib() {
         c->service(&request_, &response_, lib_file_.substr(0, lib_file_.find_last_of('/') + 1), filename);
         if (filename[0] != '\0' && ! response_write_) {
             std::string name = filename;
-            if (! isFile(name)) {
+            if (! util::isFile(name)) {
                 name = lib_file_.substr(0, lib_file_.find_last_of('/') + 1) + name;
             }
             initWriteFile(name);
@@ -1007,18 +982,6 @@ bool HttpConnect::runDynamicLib() {
     }
     (entry->destroy)(c);
     return true;
-}
-
-bool HttpConnect::isFile(const std::string &filename) const {
-    struct stat st;
-    return stat(filename.c_str(), &st) == 0 && S_ISREG(st.st_mode);
-}
-
-std::string HttpConnect::trim(const std::string & str) const {
-    size_t start = str.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos) return "";
-    size_t end = str.find_last_not_of(" \t\r\n");
-    return str.substr(start, end - start + 1);
 }
 
 #ifdef HTTPS

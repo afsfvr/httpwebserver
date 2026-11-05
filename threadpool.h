@@ -2,6 +2,7 @@
 #define THREADPOOL_H_
 
 #include <unistd.h>
+#include <deque>
 #include <atomic>
 #include <mutex>
 #include <thread>
@@ -32,24 +33,9 @@ private:
         Task* ptr;
         bool del;
     };
-    struct Data {
-    public:
-        Data(Task *data): m_data(data) {
-            next = nullptr;
-        }
-        ~Data() {
-            if (next != nullptr) {
-                delete next;
-                next = nullptr;
-            }
-        }
-        Task *m_data;
-        Data *next;
-    };
     void run(ThreadData *data);
 
-    Data *m_head;
-    Data *m_tail;
+    std::deque<Task *> m_jobs;
     std::mutex m_mutex;
     std::condition_variable m_cond;
     int m_thread_num;
