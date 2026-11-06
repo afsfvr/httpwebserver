@@ -43,6 +43,7 @@ public:
     int getStatus() const;
 private:
     void writeLen(const void *buf, size_t size, int flags = 0) const;
+    void writeV(struct iovec *iov, int cnt) const;
     std::string decimalToHex(size_t num) const;
 
     HttpConnect *conn_;

@@ -97,9 +97,9 @@ void Response::writeData(const void *buf, const size_t size) {
         flush();
         if (conn_->response_chunk_) {
             std::string s = decimalToHex(size).append("\r\n");
-            writeLen(s.data(), s.size(), MSG_MORE);
+            writeLen(s.data(), s.size());
         }
-        writeLen(buf, size, MSG_MORE);
+        writeLen(buf, size);
         if (conn_->response_chunk_) writeLen("\r\n", 2);
     } else {
         memcpy(conn_->response_buf_ + conn_->response_size_, buf, size);
@@ -114,12 +114,13 @@ void Response::writeData(const std::string &str) {
 void Response::writeLen(const void *buf, size_t size, int flags) const {
     if (!conn_ || conn_->sd_ < 0) return;
     if (size <= 0) return;
+    const char *p = static_cast<const char *>(buf);
     while (size > 0) {
 #ifdef HTTPS
         (void) flags;
         if (conn_->ssl_ == nullptr) return;
         size_t len;
-        int ret = SSL_write_ex(conn_->ssl_, buf, size, &len);
+        int ret = SSL_write_ex(conn_->ssl_, p, size, &len);
         if (ret == 0) {
             int err = SSL_get_error(conn_->ssl_, ret);
             if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
@@ -129,14 +130,54 @@ void Response::writeLen(const void *buf, size_t size, int flags) const {
             throw 103;
         }
 #else
-        ssize_t len = send(conn_->sd_, buf, size, flags | MSG_NOSIGNAL);
-        if (len < 0) throw 103;
-#endif
-        if (len > 0) {
-            size -= len;
-        } else {
-            throw 3;
+        ssize_t len = send(conn_->sd_, p, size, flags | MSG_NOSIGNAL);
+        if (len < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                if (! conn_->waitFd(POLLOUT)) throw 103; // 等待可写超时
+                continue;
+            }
+            throw 103;
         }
+#endif
+        p += len;
+        size -= static_cast<size_t>(len);
+    }
+}
+
+void Response::writeV(struct iovec *iov, int cnt) const {
+    if (!conn_ || conn_->sd_ < 0) return;
+    if (cnt <= 0) return;
+    while (true) {
+#ifdef HTTPS
+        for (int i = 0; i < cnt; i++) {
+            writeLen(iov[i].iov_base, iov[i].iov_len);
+        }
+        return;
+#else
+        ssize_t len = writev(conn_->sd_, iov, cnt);
+        if (len < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                if (! conn_->waitFd(POLLOUT)) throw 103; // 等待可写超时
+                continue;
+            }
+            throw 103;
+        }
+        if (len == 0) throw 103;
+        ssize_t rest = len;
+        while (rest > 0) { // 部分发送: 推进未完成的iovec
+            struct iovec *cur = iov;
+            if (cur->iov_len <= static_cast<size_t>(rest)) {
+                rest -= static_cast<ssize_t>(cur->iov_len);
+                iov++;
+                cnt--;
+                continue;
+            }
+            cur->iov_base = static_cast<char *>(cur->iov_base) + rest;
+            cur->iov_len -= static_cast<size_t>(rest);
+            rest = 0;
+        }
+        if (cnt == 0) return;
+#endif
     }
 }
 
@@ -162,10 +203,10 @@ void Response::writeFile(const std::string &filename) {
         if (file_size > 0) {
             if (conn_->response_chunk_) {
                 std::string buf = decimalToHex(file_size).append("\r\n");
-                writeLen(buf.data(), buf.size(), MSG_MORE);
+                writeLen(buf.data(), buf.size());
             }
             if (mapped != MAP_FAILED) {
-                writeLen(mapped, file_size, MSG_MORE);
+                writeLen(mapped, file_size);
                 if (conn_->response_chunk_) writeLen("\r\n", 2);
             } else {
                 char buf[65536];
@@ -180,9 +221,9 @@ void Response::writeFile(const std::string &filename) {
                     if (n == 0) break;
                     if (conn_->response_chunk_) {
                         std::string s = decimalToHex(static_cast<size_t>(n)).append("\r\n");
-                        writeLen(s.data(), s.size(), MSG_MORE);
+                        writeLen(s.data(), s.size());
                     }
-                    writeLen(buf, static_cast<size_t>(n), MSG_MORE);
+                    writeLen(buf, static_cast<size_t>(n));
                     if (conn_->response_chunk_) writeLen("\r\n", 2);
                     total += static_cast<size_t>(n);
                 }
@@ -221,19 +262,48 @@ void Response::flush() {
         }
         buf.append("Date: ").append(util::httpDateNow()).append("\r\n\r\n");
         if (conn_->response_size_ > 0) {
-            writeLen(buf.data(), buf.size());
+            // 响应头与已缓冲正文合并为一次 writev 发出
+            std::string hexbuf;
+            struct iovec iov[3];
+            int n = 0;
+            iov[n].iov_base = const_cast<char *>(buf.data());
+            iov[n].iov_len = buf.size();
+            n++;
+            if (conn_->response_chunk_) {
+                hexbuf = decimalToHex(conn_->response_size_).append("\r\n");
+                iov[n].iov_base = hexbuf.data();
+                iov[n].iov_len = hexbuf.size();
+                n++;
+            }
+            iov[n].iov_base = conn_->response_buf_;
+            iov[n].iov_len = conn_->response_size_;
+            n++;
+            writeV(iov, n);
         } else {
-            writeLen(buf.data(), buf.size(), MSG_MORE);
+            writeLen(buf.data(), buf.size());
         }
         conn_->response_write_ = true;
+        conn_->response_size_ = 0;
+        return;
     }
     if (conn_->response_size_ > 0) {
         if (conn_->response_chunk_) {
-            std::string buf = decimalToHex(conn_->response_size_).append("\r\n");
-            writeLen(buf.data(), buf.size(), MSG_MORE);
+            std::string hexbuf = decimalToHex(conn_->response_size_).append("\r\n");
+            struct iovec iov[3];
+            int n = 0;
+            iov[n].iov_base = hexbuf.data();
+            iov[n].iov_len = hexbuf.size();
+            n++;
+            iov[n].iov_base = conn_->response_buf_;
+            iov[n].iov_len = conn_->response_size_;
+            n++;
+            iov[n].iov_base = const_cast<char *>("\r\n");
+            iov[n].iov_len = 2;
+            n++;
+            writeV(iov, n);
+        } else {
+            writeLen(conn_->response_buf_, conn_->response_size_);
         }
-        writeLen(conn_->response_buf_, conn_->response_size_, MSG_MORE);
-        if (conn_->response_chunk_) writeLen("\r\n", 2);
     }
     conn_->response_size_ = 0;
 }
@@ -246,3 +316,4 @@ int Response::getStatus() const {
     if (conn_) return conn_->response_state_;
     return 0;
 }
+

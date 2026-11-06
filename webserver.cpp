@@ -212,57 +212,65 @@ int WebServer::setnonblock(int fd) {
 }
 
 void WebServer::add_connect() {
-    sockaddr_storage address{};
-    socklen_t addr_len = sizeof(address);
-    int sd = accept(m_listenfd, reinterpret_cast<sockaddr *>(&address), &addr_len);
-    if (sd < 0) {
-        SPDLOG_ERROR("accept:{}", strerror(errno));
-        return;
-    }
-    char ip[INET6_ADDRSTRLEN]{};
-    uint16_t port;
-    if (address.ss_family == AF_INET) {
-        auto *addr = reinterpret_cast<sockaddr_in *>(&address);
-        inet_ntop(AF_INET, &addr->sin_addr, ip, sizeof(ip));
-        port = ntohs(addr->sin_port);
-    } else if (address.ss_family == AF_INET6) {
-        auto *addr = reinterpret_cast<sockaddr_in6 *>(&address);
-        if (IN6_IS_ADDR_V4MAPPED(&addr->sin6_addr)) {
-            struct in_addr ipv4addr;
-            memcpy(&ipv4addr, &addr->sin6_addr.s6_addr[12], sizeof(ipv4addr));
-            inet_ntop(AF_INET, &ipv4addr, ip, sizeof(ip));
-        } else {
-            inet_ntop(AF_INET6, &addr->sin6_addr, ip, INET6_ADDRSTRLEN);
+    while (true) {
+        sockaddr_storage address{};
+        socklen_t addr_len = sizeof(address);
+        int sd = accept4(m_listenfd, reinterpret_cast<sockaddr *>(&address), &addr_len, SOCK_NONBLOCK | SOCK_CLOEXEC);
+        if (sd < 0) {
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+            if (errno == EMFILE || errno == ENFILE) {
+                SPDLOG_WARN("accept: {}", strerror(errno));
+                return;
+            }
+            SPDLOG_ERROR("accept:{}", strerror(errno));
+            return;
         }
-        port = ntohs(addr->sin6_port);
-    } else {
-        SPDLOG_ERROR("未知网络协议: {}", address.ss_family);
-        close(sd);
-        return;
-    }
-    SPDLOG_DEBUG("收到新连接,sd = {}, ip={}, port={}", sd, ip, port);
-    if (BlackList::getInstance()->contains(ip)) {
-        SPDLOG_DEBUG("ip {} 在黑名单内，关闭连接", ip);
-        close(sd);
-        return;
-    }
+        char ip[INET6_ADDRSTRLEN]{};
+        uint16_t port;
+        if (address.ss_family == AF_INET) {
+            auto *addr = reinterpret_cast<sockaddr_in *>(&address);
+            inet_ntop(AF_INET, &addr->sin_addr, ip, sizeof(ip));
+            port = ntohs(addr->sin_port);
+        } else if (address.ss_family == AF_INET6) {
+            auto *addr = reinterpret_cast<sockaddr_in6 *>(&address);
+            if (IN6_IS_ADDR_V4MAPPED(&addr->sin6_addr)) {
+                struct in_addr ipv4addr;
+                memcpy(&ipv4addr, &addr->sin6_addr.s6_addr[12], sizeof(ipv4addr));
+                inet_ntop(AF_INET, &ipv4addr, ip, sizeof(ip));
+            } else {
+                inet_ntop(AF_INET6, &addr->sin6_addr, ip, INET6_ADDRSTRLEN);
+            }
+            port = ntohs(addr->sin6_port);
+        } else {
+            SPDLOG_ERROR("未知网络协议: {}", address.ss_family);
+            close(sd);
+            return;
+        }
+        SPDLOG_DEBUG("收到新连接,sd = {}, ip={}, port={}", sd, ip, port);
+        if (BlackList::getInstance()->contains(ip)) {
+            SPDLOG_DEBUG("ip {} 在黑名单内，关闭连接", ip);
+            close(sd);
+            continue;
+        }
 #ifdef HTTPS
-    SSL *ssl = SSL_new(m_ctx);
-    if (! ssl) {
-        SPDLOG_ERROR("SSL_new return nullptr");
-        close(sd);
-        return;
-    }
-    if (SSL_set_fd(ssl, sd) != 1) {
-        SPDLOG_ERROR("SSL_set_fd failed");
-        SSL_free(ssl);
-        close(sd);
-        return;
-    }
-    new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, port);
+        SSL *ssl = SSL_new(m_ctx);
+        if (! ssl) {
+            SPDLOG_ERROR("SSL_new return nullptr");
+            close(sd);
+            continue;
+        }
+        if (SSL_set_fd(ssl, sd) != 1) {
+            SPDLOG_ERROR("SSL_set_fd failed");
+            SSL_free(ssl);
+            close(sd);
+            continue;
+        }
+        new HttpConnect(m_epollfd, m_pipe[1], ssl, sd, ip, port);
 #else
-    new HttpConnect(m_epollfd, m_pipe[1], sd, ip, port);
+        new HttpConnect(m_epollfd, m_pipe[1], sd, ip, port);
 #endif
+    }
 }
 
 void WebServer::stop() {
@@ -353,3 +361,4 @@ int WebServer::alpnSelectCb(SSL * ssl, const unsigned char **out, unsigned char 
     return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
 #endif
+

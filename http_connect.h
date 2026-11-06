@@ -39,8 +39,6 @@ private:
     bool waitFd(short events);
     void drainRequestBody();
     void init();
-    int setblock(const int &fd);
-    int setnonblock(const int &fd);
     void readData();
     void parse();
     void parseLine(char *data);
@@ -99,6 +97,7 @@ private:
     std::map<std::string, std::string, case_insensitive_compare> response_headers_;
     std::set<Cookie> response_cookies_;
     char *response_file_ptr_;
+    int response_file_fd_;
     size_t response_file_length_;
     size_t response_send_byte_;
     size_t response_have_byte_;

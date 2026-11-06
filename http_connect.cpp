@@ -38,12 +38,12 @@ HttpConnect::HttpConnect(const int &epollfd, const int &pipe,
         ssl_{ssl},
 #endif
     request_{this}, response_{this} {
-    setnonblock(sd_);
     int val = 1;
     if (setsockopt(sd_, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val)) < 0) { // 关闭Nagle
         SPDLOG_WARN("setsockopt TCP_NODELAY: {}", strerror(errno));
     }
     response_file_ptr_ = nullptr;
+    response_file_fd_ = -1;
     keep_alive_ = true;
     init();
 #ifdef HTTPS
@@ -72,6 +72,10 @@ HttpConnect::~HttpConnect() {
     if (response_file_ptr_ != nullptr) {
         munmap(response_file_ptr_, response_file_length_);
         response_file_ptr_ = nullptr;
+    }
+    if (response_file_fd_ >= 0) {
+        close(response_file_fd_);
+        response_file_fd_ = -1;
     }
     close(sd_);
     sd_ = -1;
@@ -226,6 +230,10 @@ void HttpConnect::init() {
         munmap(response_file_ptr_, response_file_length_);
         response_file_ptr_ = nullptr;
     }
+    if (response_file_fd_ >= 0) {
+        close(response_file_fd_);
+        response_file_fd_ = -1;
+    }
     if (! keep_alive_) {
         SPDLOG_DEBUG("keep-alive=false,关闭socket={}", sd_);
         throw 4;
@@ -255,20 +263,6 @@ void HttpConnect::init() {
 #ifdef HTTPS
     response_headers_.emplace("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
 #endif
-}
-
-int HttpConnect::setblock(const int &fd) {
-    int old_option = fcntl(fd, F_GETFL);
-    int new_option = old_option & ~O_NONBLOCK;
-    fcntl(fd, F_SETFL, new_option);
-    return old_option;
-}
-
-int HttpConnect::setnonblock(const int &fd) {
-    int old_option = fcntl(fd, F_GETFL);
-    int new_option = old_option | O_NONBLOCK;
-    fcntl(fd, F_SETFL, new_option);
-    return old_option;
 }
 
 void HttpConnect::readData() {
@@ -585,26 +579,35 @@ void HttpConnect::writeData() {
         parseRequestBodyLength();
         initWriteLib();
         if (! lib_file_.empty()) {
-            setblock(sd_);
             try {
                 bool ret = runDynamicLib();
-                setnonblock(sd_);
                 if (! ret) {
                     setResponseState(500, "<h1>500</h1>");
                     SPDLOG_DEBUG("socket:{},运行动态库错误", sd_);
                 }
             } catch (int ex) {
-                setnonblock(sd_);
                 throw ex;
             }
         }
         drainRequestBody();
     }
 
-    if (! response_send_head_.empty() && response_have_byte_ > 0 && response_file_ptr_ == nullptr) {
+    if (! response_send_head_.empty() && response_have_byte_ > 0 && response_file_ptr_ == nullptr && response_file_fd_ < 0) {
         response_send_head_.append(response_buf_, response_have_byte_);
         response_have_byte_ = 0;
     }
+#ifndef HTTPS
+    if (! response_send_head_.empty() && response_have_byte_ > 0 && response_file_fd_ >= 0 && response_have_byte_ <= 4096) {
+        char filebuf[4096]; 
+        ssize_t n = pread(response_file_fd_, filebuf, response_have_byte_, static_cast<off_t>(response_send_byte_));
+        if (n <= 0) {
+            if (n < 0) SPDLOG_ERROR("sd:{},read file:{}", sd_, strerror(errno));
+            throw 103;
+        }
+        response_send_head_.append(filebuf, static_cast<size_t>(n));
+        response_have_byte_ = 0;
+    }
+#endif
     if (! writeHead()) return;
     while (true) {
         if (response_have_byte_ == 0) {
@@ -612,11 +615,11 @@ void HttpConnect::writeData() {
             modfd(EPOLLIN);
             return;
         }
+#ifdef HTTPS
         const char *data = response_file_ptr_;
         if (data == nullptr) {
             data = response_buf_;
         }
-#ifdef HTTPS
         size_t len;
         int ret = SSL_write_ex(ssl_, data + response_send_byte_, response_have_byte_, &len);
         if (ret == 0) {
@@ -647,8 +650,26 @@ void HttpConnect::writeData() {
                 throw 103;
             }
         }
+        response_send_byte_ += len;
+        response_have_byte_ -= len;
 #else
-        ssize_t len = send(sd_, data + response_send_byte_, response_have_byte_, MSG_NOSIGNAL);
+        if (response_file_fd_ >= 0) { // 文件响应: sendfile 零拷贝
+            off_t off = static_cast<off_t>(response_send_byte_);
+            ssize_t len = sendfile(sd_, response_file_fd_, &off, response_have_byte_);
+            if (len < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    modfd(EPOLLOUT);
+                    return;
+                }
+                SPDLOG_ERROR("sd:{},sendfile:{}", sd_, strerror(errno));
+                throw 103;
+            }
+            if (len == 0) throw 103; // 文件被截断或提前到达EOF
+            response_send_byte_ += static_cast<size_t>(len);
+            response_have_byte_ -= static_cast<size_t>(len);
+            continue;
+        }
+        ssize_t len = send(sd_, response_buf_ + response_send_byte_, response_have_byte_, MSG_NOSIGNAL);
         if (len == 0) throw 3;
         if (len < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -659,9 +680,9 @@ void HttpConnect::writeData() {
                 return;
             }
         }
+        response_send_byte_ += static_cast<size_t>(len);
+        response_have_byte_ -= static_cast<size_t>(len);
 #endif
-        response_send_byte_ += len;
-        response_have_byte_ -= len;
     }
 }
 
@@ -776,6 +797,7 @@ void HttpConnect::initWriteFile(const std::string &filename) {
             setResponseState(500, "<h1>500</h1>");
             return;
         }
+#ifdef HTTPS
         response_file_ptr_ = (char*)mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
         close(fd);
         if (reinterpret_cast<void*>(response_file_ptr_) == reinterpret_cast<void*>(-1)) {
@@ -783,6 +805,9 @@ void HttpConnect::initWriteFile(const std::string &filename) {
             setResponseState(500, "<h1>500</h1>");
             return;
         }
+#else
+        response_file_fd_ = fd; // sendfile 直接从fd输出，保持打开直到发送完成
+#endif
 
         const auto &type = Config::getInstance()->getType();
         size_t index = filename.find_last_of('.');
@@ -819,7 +844,7 @@ void HttpConnect::initWriteFile(const std::string &filename) {
                     i2 = response_file_length_;
                 }
             }
-            if (i2 >= response_file_length_) i2--;
+            if (i2 >= response_file_length_) i2 = response_file_length_ - 1;
             if (i1 <= i2) {
                 std::string value = "bytes ";
                 value.append(std::to_string(i1)).append("-").append(std::to_string(i2)).append("/").append(std::to_string(response_file_length_));
@@ -1005,3 +1030,4 @@ void HttpConnect::handshake() {
     }
 }
 #endif
+
